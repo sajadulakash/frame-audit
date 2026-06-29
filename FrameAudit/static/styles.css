@@ -1,18 +1,19 @@
 :root {
-  --bg: #f2efe7;
-  --panel: rgba(255, 252, 245, 0.88);
-  --panel-border: rgba(73, 52, 34, 0.16);
-  --text: #2d241f;
-  --muted: #75685c;
-  --accent: #2a6f63;
-  --accent-dark: #1b4f47;
-  --danger: #a74438;
-  --danger-dark: #822d25;
-  --shadow: 0 22px 50px rgba(44, 31, 20, 0.12);
+  --bg: #eef1ee;
+  --surface: #ffffff;
+  --border: #d6ddd7;
+  --text: #1f2923;
+  --muted: #617067;
+  --accent: #256b4d;
+  --accent-dark: #184b35;
+  --danger: #b3392f;
+  --danger-dark: #872a23;
+  --focus: rgba(37, 107, 77, 0.24);
 }
 
 * {
   box-sizing: border-box;
+  letter-spacing: 0;
 }
 
 [hidden] {
@@ -22,12 +23,9 @@
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--text);
-  background:
-    radial-gradient(circle at top left, rgba(42, 111, 99, 0.16), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(167, 68, 56, 0.12), transparent 26%),
-    linear-gradient(135deg, #f7f1e4 0%, #ece4d8 100%);
+  background: var(--bg);
 }
 
 .app-shell {
@@ -37,29 +35,116 @@ body {
   padding: 24px;
 }
 
+.access-panel,
 .viewer-panel {
   width: min(980px, 100%);
-  padding: 28px;
-  border: 1px solid var(--panel-border);
-  border-radius: 28px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 14px 36px rgba(31, 41, 35, 0.08);
 }
 
-.user-panel {
+.access-panel {
   width: min(560px, 100%);
+  padding: 32px;
 }
 
-.user-buttons {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+.viewer-panel {
+  padding: 24px;
 }
 
 .viewer-panel:focus {
-  outline: 3px solid rgba(42, 111, 99, 0.35);
-  outline-offset: 4px;
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 2rem;
+  line-height: 1.2;
+}
+
+.panel-copy {
+  margin: 10px 0 24px;
+  color: var(--muted);
+}
+
+.role-actions,
+.user-buttons {
+  display: grid;
+  gap: 12px;
+}
+
+.role-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.user-buttons {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 24px;
+}
+
+.login-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.login-form label {
+  margin-top: 6px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.login-form input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #b9c5bc;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: #fff;
+  font: inherit;
+}
+
+.login-form input:focus {
+  border-color: var(--accent);
+  outline: 3px solid var(--focus);
+}
+
+.login-form button {
+  margin-top: 12px;
+}
+
+.admin-welcome {
+  text-align: center;
+}
+
+.admin-welcome button {
+  margin-top: 24px;
+}
+
+.back-button {
+  margin-bottom: 24px;
+  padding: 8px 0;
+  color: var(--accent);
+  background: transparent;
+}
+
+.back-button:hover:not(:disabled) {
+  color: var(--accent-dark);
+  background: transparent;
+  transform: none;
 }
 
 .status-bar {
@@ -73,48 +158,33 @@ body {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 10px;
-}
-
-.eyebrow {
-  margin: 0 0 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-
-h1 {
-  margin: 0;
-  font-size: clamp(1.6rem, 4vw, 2.4rem);
-  line-height: 1.1;
+  gap: 8px;
 }
 
 .count-badge {
-  padding: 10px 14px;
-  border-radius: 999px;
-  background: rgba(42, 111, 99, 0.12);
+  border-radius: 6px;
+  padding: 9px 12px;
   color: var(--accent-dark);
+  background: #e8f1ec;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .count-badge.secondary {
-  background: rgba(73, 52, 34, 0.08);
   color: var(--text);
+  background: #edf0ed;
 }
 
 .image-frame {
   position: relative;
-  margin-top: 24px;
   min-height: 55vh;
-  border-radius: 22px;
+  margin-top: 20px;
   overflow: hidden;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(241, 234, 223, 0.96));
-  border: 1px solid rgba(73, 52, 34, 0.1);
   display: grid;
   place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f7f8f7;
 }
 
 #imageViewer {
@@ -122,54 +192,67 @@ h1 {
   width: 100%;
   height: 55vh;
   object-fit: contain;
-  background: repeating-linear-gradient(
-    45deg,
-    rgba(73, 52, 34, 0.04),
-    rgba(73, 52, 34, 0.04) 12px,
-    rgba(255, 255, 255, 0.08) 12px,
-    rgba(255, 255, 255, 0.08) 24px
-  );
 }
 
 .empty-state {
-  text-align: center;
-  color: var(--muted);
   padding: 24px;
+  color: var(--muted);
+  text-align: center;
 }
 
 .message {
   min-height: 24px;
-  margin: 16px 4px 0;
+  margin: 14px 0 0;
   color: var(--muted);
+}
+
+.error-message {
+  color: var(--danger);
 }
 
 .controls {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 16px;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 button {
+  min-height: 44px;
   border: 0;
-  border-radius: 16px;
-  padding: 14px 16px;
-  font: inherit;
-  font-weight: 700;
+  border-radius: 6px;
+  padding: 11px 14px;
   color: #fff;
   background: var(--accent);
   cursor: pointer;
-  transition: transform 140ms ease, opacity 140ms ease, background 140ms ease;
+  font: inherit;
+  font-weight: 700;
+  transition: background 140ms ease, opacity 140ms ease, transform 140ms ease;
 }
 
 button:hover:not(:disabled) {
-  transform: translateY(-1px);
   background: var(--accent-dark);
+  transform: translateY(-1px);
+}
+
+button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
 }
 
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+button.secondary-button {
+  border: 1px solid #b8c6bd;
+  color: var(--text);
+  background: #f4f6f4;
+}
+
+button.secondary-button:hover:not(:disabled) {
+  background: #e6ece8;
 }
 
 button.danger {
@@ -181,10 +264,19 @@ button.danger:hover:not(:disabled) {
 }
 
 @media (max-width: 720px) {
-  .user-panel,
+  .app-shell {
+    padding: 12px;
+  }
+
+  .access-panel,
   .viewer-panel {
-    padding: 18px;
-    border-radius: 20px;
+    padding: 20px;
+  }
+
+  .role-actions,
+  .user-buttons,
+  .controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .status-bar {
@@ -200,9 +292,11 @@ button.danger:hover:not(:disabled) {
     min-height: 42vh;
     height: 42vh;
   }
+}
 
-  .user-buttons,
-  .controls {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@media (max-width: 420px) {
+  .role-actions,
+  .user-buttons {
+    grid-template-columns: 1fr;
   }
 }

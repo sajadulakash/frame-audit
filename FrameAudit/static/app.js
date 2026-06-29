@@ -6,9 +6,24 @@ const state = {
   totalTrackedImages: 0,
 };
 
+const rolePanel = document.getElementById("rolePanel");
 const userPanel = document.getElementById("userPanel");
+const adminLoginPanel = document.getElementById("adminLoginPanel");
+const adminPanel = document.getElementById("adminPanel");
+const viewerPanel = document.getElementById("viewerPanel");
+const screens = [rolePanel, userPanel, adminLoginPanel, adminPanel, viewerPanel];
+
+const annotatorRoleButton = document.getElementById("annotatorRoleButton");
+const adminRoleButton = document.getElementById("adminRoleButton");
 const userButtons = document.getElementById("userButtons");
 const userMessage = document.getElementById("userMessage");
+const adminLoginForm = document.getElementById("adminLoginForm");
+const adminUsername = document.getElementById("adminUsername");
+const adminLoginButton = document.getElementById("adminLoginButton");
+const adminLoginMessage = document.getElementById("adminLoginMessage");
+const adminWelcomeMessage = document.getElementById("adminWelcomeMessage");
+const adminLogoutButton = document.getElementById("adminLogoutButton");
+const folderListButton = document.getElementById("folderListButton");
 const selectedUserLabel = document.getElementById("selectedUserLabel");
 const imageName = document.getElementById("imageName");
 const imageCount = document.getElementById("imageCount");
@@ -16,97 +31,90 @@ const folderCount = document.getElementById("folderCount");
 const imageViewer = document.getElementById("imageViewer");
 const emptyState = document.getElementById("emptyState");
 const messageBox = document.getElementById("messageBox");
-const viewerPanel = document.getElementById("viewerPanel");
 const previousButton = document.getElementById("previousButton");
 const nextButton = document.getElementById("nextButton");
 const deleteButton = document.getElementById("deleteButton");
 const undoButton = document.getElementById("undoButton");
-const LAST_IMAGE_STORAGE_PREFIX = "image-review:last-image:";
-const SELECTED_USER_STORAGE_KEY = "image-review:selected-user";
 
-function clampIndex() {
-  if (state.images.length === 0) {
-    state.currentIndex = 0;
-    return;
-  }
-  if (state.currentIndex >= state.images.length) {
-    state.currentIndex = state.images.length - 1;
-  }
-  if (state.currentIndex < 0) {
-    state.currentIndex = 0;
-  }
+const LAST_IMAGE_STORAGE_PREFIX = "frame-audit:last-image:";
+
+function showScreen(activeScreen) {
+  screens.forEach((screen) => {
+    screen.hidden = screen !== activeScreen;
+  });
+}
+
+function showRolePanel() {
+  showScreen(rolePanel);
+  adminLoginForm.reset();
+  adminLoginMessage.textContent = "";
+  userMessage.textContent = "";
+}
+
+function showUserPanel() {
+  showScreen(userPanel);
+  userMessage.textContent = "";
+}
+
+function showAdminLoginPanel() {
+  showScreen(adminLoginPanel);
+  adminLoginMessage.textContent = "";
+  adminUsername.focus();
+}
+
+function showViewerPanel() {
+  showScreen(viewerPanel);
+  selectedUserLabel.textContent = state.selectedUserLabel || "FrameAudit";
+  viewerPanel.focus();
 }
 
 function setMessage(message = "") {
   messageBox.textContent = message;
 }
 
-function setUserMessage(message = "") {
-  userMessage.textContent = message;
-}
-
 function getLastImageStorageKey() {
-  return `${LAST_IMAGE_STORAGE_PREFIX}${state.selectedUserId}`;
+  return LAST_IMAGE_STORAGE_PREFIX + state.selectedUserId;
 }
 
 function getStoredImageName() {
   if (!state.selectedUserId) {
     return null;
   }
-
   return window.localStorage.getItem(getLastImageStorageKey());
 }
 
 function storeCurrentImageName() {
   const currentImage = state.images[state.currentIndex];
-
-  if (!currentImage) {
-    if (state.selectedUserId) {
-      window.localStorage.removeItem(getLastImageStorageKey());
-    }
+  if (!state.selectedUserId) {
     return;
   }
-
+  if (!currentImage) {
+    window.localStorage.removeItem(getLastImageStorageKey());
+    return;
+  }
   window.localStorage.setItem(getLastImageStorageKey(), currentImage.name);
 }
 
-function showUserPanel() {
-  state.selectedUserId = null;
-  state.selectedUserLabel = "";
-  state.images = [];
-  state.currentIndex = 0;
-  state.totalTrackedImages = 0;
-  userPanel.hidden = false;
-  viewerPanel.hidden = true;
-  setMessage("");
-  setUserMessage("");
-  window.localStorage.removeItem(SELECTED_USER_STORAGE_KEY);
-}
-
-function showViewerPanel(updateHistory = true) {
-  userPanel.hidden = true;
-  viewerPanel.hidden = false;
-  selectedUserLabel.textContent = state.selectedUserLabel || "FrameAudit";
-  if (updateHistory) {
-    window.history.pushState({ userId: state.selectedUserId }, "", `#${state.selectedUserId}`);
+function clampIndex() {
+  if (state.images.length === 0) {
+    state.currentIndex = 0;
+  } else {
+    state.currentIndex = Math.max(0, Math.min(state.currentIndex, state.images.length - 1));
   }
-  viewerPanel.focus();
 }
 
 function showPreviousImage() {
-  if (state.currentIndex <= 0) {
-    return;
+  if (state.currentIndex > 0) {
+    state.currentIndex -= 1;
+    render();
   }
-  state.currentIndex -= 1;
-  render();
 }
 
 function showNextImage() {
-  if (state.images.length === 0 || state.currentIndex >= state.images.length - 1) {
-    return;
+  if (state.currentIndex < state.images.length - 1) {
+    state.currentIndex += 1;
+    render();
   }
-  state.currentIndex += 1;
-  render();
 }
 
 function render() {
@@ -114,7 +122,7 @@ function render() {
 
   if (state.images.length === 0) {
     imageName.textContent = "No image loaded";
-    imageCount.textContent = `0 / ${state.totalTrackedImages}`;
+    imageCount.textContent = "0 / " + state.totalTrackedImages;
     folderCount.textContent = "0 in folder";
     imageViewer.style.display = "none";
     imageViewer.removeAttribute("src");
@@ -130,12 +138,17 @@ function render() {
 
   const currentImage = state.images[state.currentIndex];
   imageName.textContent = currentImage.name;
-  imageCount.textContent = `${currentImage.number} / ${state.totalTrackedImages}`;
-  folderCount.textContent = `${state.images.length} in folder`;
-  imageViewer.src = `/api/users/${state.selectedUserId}/images/${encodeURIComponent(currentImage.name)}?v=${Date.now()}`;
+  imageCount.textContent = currentImage.number + " / " + state.totalTrackedImages;
+  folderCount.textContent = state.images.length + " in folder";
+  imageViewer.src =
+    "/api/users/" +
+    state.selectedUserId +
+    "/images/" +
+    encodeURIComponent(currentImage.name) +
+    "?v=" +
+    Date.now();
   imageViewer.style.display = "block";
   emptyState.style.display = "none";
-
   previousButton.disabled = state.currentIndex === 0;
   nextButton.disabled = state.currentIndex === state.images.length - 1;
   deleteButton.disabled = false;
@@ -145,6 +158,7 @@ function render() {
 function applyServerState(data, preferredName = null) {
   const oldCurrentName =
     preferredName ?? getStoredImageName() ?? state.images[state.currentIndex]?.name ?? null;
+
   state.selectedUserId = data.user_id || state.selectedUserId;
   state.selectedUserLabel = data.user_label || state.selectedUserLabel;
   state.images = data.images || [];
@@ -154,7 +168,8 @@ function applyServerState(data, preferredName = null) {
     state.currentIndex = 0;
   } else if (oldCurrentName) {
     const nextIndex = state.images.findIndex((image) => image.name === oldCurrentName);
-    state.currentIndex = nextIndex >= 0 ? nextIndex : Math.min(state.currentIndex, state.images.length - 1);
+    state.currentIndex =
+      nextIndex >= 0 ? nextIndex : Math.min(state.currentIndex, state.images.length - 1);
   } else {
     state.currentIndex = 0;
   }
@@ -166,47 +181,20 @@ function applyServerState(data, preferredName = null) {
 }
 
 async function fetchState() {
-  if (!state.selectedUserId) {
-    return;
-  }
-
-  const response = await fetch(`/api/users/${state.selectedUserId}/state`);
+  const response = await fetch("/api/users/" + state.selectedUserId + "/state");
+  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
     throw new Error(data.detail || "Failed to load images.");
   }
-  const data = await response.json();
   applyServerState(data);
 }
 
 async function selectUser(userId, userLabel) {
   state.selectedUserId = userId;
   state.selectedUserLabel = userLabel;
-  window.localStorage.setItem(
-    SELECTED_USER_STORAGE_KEY,
-    JSON.stringify({ id: userId, label: userLabel })
-  );
   showViewerPanel();
   setMessage("Loading images...");
   await fetchState();
-}
-
-function getStoredUser() {
-  const storedUser = window.localStorage.getItem(SELECTED_USER_STORAGE_KEY);
-  if (!storedUser) {
-    return null;
-  }
-
-  try {
-    const parsedUser = JSON.parse(storedUser);
-    if (typeof parsedUser.id === "string" && typeof parsedUser.label === "string") {
-      return parsedUser;
-    }
-  } catch (error) {
-    window.localStorage.removeItem(SELECTED_USER_STORAGE_KEY);
-  }
-
-  return null;
 }
 
 async function deleteCurrentImage() {
@@ -215,28 +203,37 @@ async function deleteCurrentImage() {
     return;
   }
 
-  const response = await fetch(`/api/users/${state.selectedUserId}/delete/${encodeURIComponent(currentImage.name)}`, {
-    method: "POST",
-  });
+  const response = await fetch(
+    "/api/users/" +
+      state.selectedUserId +
+      "/delete/" +
+      encodeURIComponent(currentImage.name),
+    { method: "POST" }
+  );
   const data = await response.json();
-
   if (!response.ok) {
     throw new Error(data.detail || "Failed to delete image.");
   }
-
   applyServerState(data);
 }
 
 async function undoDelete() {
-  const response = await fetch(`/api/users/${state.selectedUserId}/undo`, { method: "POST" });
+  const response = await fetch("/api/users/" + state.selectedUserId + "/undo", {
+    method: "POST",
+  });
   const data = await response.json();
-
   if (!response.ok) {
     throw new Error(data.detail || "Failed to undo delete.");
   }
-
   applyServerState(data, data.restored_name || null);
 }
+
+annotatorRoleButton.addEventListener("click", showUserPanel);
+adminRoleButton.addEventListener("click", showAdminLoginPanel);
+
+document.querySelectorAll("[data-back-to-roles]").forEach((button) => {
+  button.addEventListener("click", showRolePanel);
+});
 
 userButtons.addEventListener("click", async (event) => {
   const button = event.target.closest("button[data-user-id]");
@@ -245,16 +242,47 @@ userButtons.addEventListener("click", async (event) => {
   }
 
   try {
-    setUserMessage("");
+    userMessage.textContent = "";
     await selectUser(button.dataset.userId, button.textContent.trim());
   } catch (error) {
     showUserPanel();
-    setUserMessage(error.message);
+    userMessage.textContent = error.message;
   }
 });
 
-previousButton.addEventListener("click", showPreviousImage);
+adminLoginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  adminLoginMessage.textContent = "";
+  adminLoginButton.disabled = true;
 
+  const formData = new FormData(adminLoginForm);
+  try {
+    const response = await fetch("/api/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: formData.get("username"),
+        password: formData.get("password"),
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.detail || "Login failed.");
+    }
+
+    adminWelcomeMessage.textContent = data.message || "Welcome Admin";
+    adminLoginForm.reset();
+    showScreen(adminPanel);
+  } catch (error) {
+    adminLoginMessage.textContent = error.message;
+  } finally {
+    adminLoginButton.disabled = false;
+  }
+});
+
+adminLogoutButton.addEventListener("click", showRolePanel);
+folderListButton.addEventListener("click", showUserPanel);
+previousButton.addEventListener("click", showPreviousImage);
 nextButton.addEventListener("click", showNextImage);
 
 deleteButton.addEventListener("click", async () => {
@@ -275,39 +303,18 @@ undoButton.addEventListener("click", async () => {
   }
 });
 
-function handleKeyboardNavigation(event) {
-  if (state.images.length === 0) {
-    return;
-  }
-
-  if (event.key === "ArrowLeft" || event.key === "Left") {
+viewerPanel.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowLeft") {
     event.preventDefault();
     showPreviousImage();
-  }
-
-  if (event.key === "ArrowRight" || event.key === "Right") {
+  } else if (event.key === "ArrowRight") {
     event.preventDefault();
     showNextImage();
   }
-}
+});
 
-viewerPanel.addEventListener("keydown", handleKeyboardNavigation);
 viewerPanel.addEventListener("click", () => {
   viewerPanel.focus();
 });
 
-folderCount.textContent = "0 in folder";
-
-window.addEventListener("popstate", () => {
-  showUserPanel();
-});
-
-const storedUser = getStoredUser();
-if (storedUser) {
-  selectUser(storedUser.id, storedUser.label).catch((error) => {
-    showUserPanel();
-    setUserMessage(error.message);
-  });
-} else {
-  showUserPanel();
-}
+showRolePanel();

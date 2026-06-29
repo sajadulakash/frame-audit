@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from hmac import compare_digest
 import os
 from pathlib import Path
 from shutil import move
@@ -8,12 +9,18 @@ from typing import Any
 from urllib.parse import unquote
 
 import yaml
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 
 BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
+
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 IMAGE_ROOT = Path(
     os.environ.get(
         "IMAGE_REVIEW_DATA_DIR",
@@ -48,6 +55,11 @@ UNDO_LOG_FILE_NAME = ".undo_log.yaml"
 
 app = FastAPI(title="FrameAudit")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 def _user_config(user_id: str) -> dict[str, Any]:
@@ -238,7 +250,10 @@ def _safe_deleted_name(user_id: str, original_name: str) -> str:
 
 @app.get("/")
 def serve_index() -> FileResponse:
-    return FileResponse(BASE_DIR / "static" / "index.html")
+    return FileResponse(
+        BASE_DIR / "static" / "index.html",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/api/users")
@@ -249,6 +264,19 @@ def get_users() -> dict[str, Any]:
             for user_id, user_config in USER_IMAGE_DIRECTORIES.items()
         ]
     }
+
+
+@app.post("/api/admin/login")
+def admin_login(credentials: AdminLoginRequest) -> dict[str, str]:
+    if not ADMIN_USERNAME or not ADMIN_PASSWORD:
+        raise HTTPException(status_code=500, detail="Admin credentials are not configured.")
+
+    valid_username = compare_digest(credentials.username, ADMIN_USERNAME)
+    valid_password = compare_digest(credentials.password, ADMIN_PASSWORD)
+    if not valid_username or not valid_password:
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
+
+    return {"message": "Welcome Admin"}
 
 
 @app.get("/api/users/{user_id}/state")
