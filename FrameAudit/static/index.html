@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FrameAudit</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="user-panel" id="userPanel">
+        <div class="user-buttons" id="userButtons">
+          <button type="button" data-user-id="user1">Rouf</button>
+          <button type="button" data-user-id="user2">Sabina</button>
+          <button type="button" data-user-id="user3">Sabia</button>
+          <button type="button" data-user-id="user4">Tanisha</button>
+        </div>
+        <p class="message" id="userMessage"></p>
+      </section>
+
+      <section class="viewer-panel" id="viewerPanel" tabindex="0" hidden>
+        <div class="status-bar">
+          <div>
+            <p class="eyebrow" id="selectedUserLabel">FrameAudit</p>
+            <h1 id="imageName">No image loaded</h1>
+          </div>
+          <div class="status-metrics">
+            <div class="count-badge" id="imageCount">0 / 0</div>
+            <div class="count-badge secondary" id="folderCount">0 in folder</div>
+          </div>
+        </div>
+
+        <div class="image-frame">
+          <img id="imageViewer" alt="Selected image" />
+          <div class="empty-state" id="emptyState">
+            <p>No images found in the configured folder.</p>
+          </div>
+        </div>
+
+        <p class="message" id="messageBox"></p>
+
+        <div class="controls">
+          <button id="previousButton" type="button">← Previous</button>
+          <button id="deleteButton" type="button" class="danger">Delete</button>
+          <button id="undoButton" type="button">Undo</button>
+          <button id="nextButton" type="button">Next →</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js?v=8"></script>
+  </body>
+  </html>
