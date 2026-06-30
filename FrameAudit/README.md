@@ -34,10 +34,11 @@ Open http://127.0.0.1:8000. Sign in as administrator to create annotators and as
 
 ## Features
 
-- Dynamic annotator creation, renaming, reassignment, and removal.
+- Dynamic annotator creation, renaming, reassignment, delete-label instructions, and removal.
 - Persistent annotator configuration outside the Git repository.
 - Protected administrator management APIs.
 - React interfaces for administrator and annotator workflows.
+- Annotators see assigned delete labels in the review sidebar.
 - Browser Back navigation between screens.
 - Previous and next image navigation with arrow keys.
 - Mouse-wheel zoom in the image review workspace.

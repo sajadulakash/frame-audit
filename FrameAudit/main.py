@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -55,14 +55,16 @@ class AdminLoginRequest(BaseModel):
 class AnnotatorCreateRequest(BaseModel):
     name: str
     folder_path: str
+    delete_labels: list[str] = Field(default_factory=list)
 
 
 class AnnotatorUpdateRequest(BaseModel):
     name: str | None = None
     folder_path: str | None = None
+    delete_labels: list[str] | None = None
 
 
-def _read_annotators() -> list[dict[str, str]]:
+def _read_annotators() -> list[dict[str, Any]]:
     with _CONFIG_LOCK:
         if not ANNOTATOR_CONFIG_PATH.exists():
             return []
@@ -82,7 +84,7 @@ def _read_annotators() -> list[dict[str, str]]:
                 detail="Annotator configuration has an invalid format.",
             )
 
-        valid_annotators: list[dict[str, str]] = []
+        valid_annotators: list[dict[str, Any]] = []
         for annotator in annotators:
             if not isinstance(annotator, dict):
                 continue
@@ -91,12 +93,13 @@ def _read_annotators() -> list[dict[str, str]]:
                 for key in ("id", "name", "folder_path")
             ):
                 continue
+            annotator["delete_labels"] = _normalized_delete_labels(annotator.get("delete_labels", []))
             valid_annotators.append(annotator)
 
         return valid_annotators
 
 
-def _write_annotators(annotators: list[dict[str, str]]) -> None:
+def _write_annotators(annotators: list[dict[str, Any]]) -> None:
     payload = {
         "version": 1,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -159,8 +162,32 @@ def _normalized_folder_path(value: str) -> Path:
     return folder_path
 
 
+def _normalized_delete_labels(labels: list[str] | None) -> list[str]:
+    if labels is None:
+        return []
+
+    normalized_labels: list[str] = []
+    seen_labels: set[str] = set()
+    for value in labels:
+        label = " ".join(str(value).split())
+        if not label:
+            continue
+        if len(label) > 80:
+            raise HTTPException(
+                status_code=422,
+                detail="Delete labels must be 80 characters or fewer.",
+            )
+        label_key = label.casefold()
+        if label_key in seen_labels:
+            continue
+        seen_labels.add(label_key)
+        normalized_labels.append(label)
+
+    return normalized_labels
+
+
 def _ensure_unique_annotator(
-    annotators: list[dict[str, str]],
+    annotators: list[dict[str, Any]],
     name: str,
     folder_path: Path,
     excluded_id: str | None = None,
@@ -181,14 +208,14 @@ def _ensure_unique_annotator(
             )
 
 
-def _annotator_config(annotator_id: str) -> dict[str, str]:
+def _annotator_config(annotator_id: str) -> dict[str, Any]:
     for annotator in _read_annotators():
         if annotator["id"] == annotator_id:
             return annotator
     raise HTTPException(status_code=404, detail="Annotator is not configured.")
 
 
-def _admin_annotator_payload(annotator: dict[str, str]) -> dict[str, Any]:
+def _admin_annotator_payload(annotator: dict[str, Any]) -> dict[str, Any]:
     folder_path = Path(annotator["folder_path"])
     folder_exists = folder_path.exists() and folder_path.is_dir()
     image_count = 0
@@ -205,6 +232,7 @@ def _admin_annotator_payload(annotator: dict[str, str]) -> dict[str, Any]:
         "folder_path": annotator["folder_path"],
         "folder_exists": folder_exists,
         "image_count": image_count,
+        "delete_labels": _normalized_delete_labels(annotator.get("delete_labels", [])),
         "created_at": annotator.get("created_at"),
         "updated_at": annotator.get("updated_at"),
     }
@@ -370,6 +398,7 @@ def _current_state(annotator_id: str) -> dict[str, Any]:
         "total_tracked_images": index_payload["total_tracked_images"],
         "can_undo": bool(history),
         "last_deleted_name": history[-1]["original_name"] if history else None,
+        "delete_labels": _normalized_delete_labels(annotator.get("delete_labels", [])),
     }
 
 
@@ -483,6 +512,7 @@ def create_annotator(
     annotators = _read_annotators()
     name = _normalized_name(payload.name)
     folder_path = _normalized_folder_path(payload.folder_path)
+    delete_labels = _normalized_delete_labels(payload.delete_labels)
     _ensure_unique_annotator(annotators, name, folder_path)
 
     timestamp = datetime.now(timezone.utc).isoformat()
@@ -490,6 +520,7 @@ def create_annotator(
         "id": "ann_" + uuid4().hex[:12],
         "name": name,
         "folder_path": str(folder_path),
+        "delete_labels": delete_labels,
         "created_at": timestamp,
         "updated_at": timestamp,
     }
@@ -504,7 +535,7 @@ def update_annotator(
     payload: AnnotatorUpdateRequest,
     _: str = Depends(_require_admin),
 ) -> dict[str, Any]:
-    if payload.name is None and payload.folder_path is None:
+    if payload.name is None and payload.folder_path is None and payload.delete_labels is None:
         raise HTTPException(status_code=422, detail="No changes were provided.")
 
     annotators = _read_annotators()
@@ -525,6 +556,11 @@ def update_annotator(
         if payload.folder_path is not None
         else Path(annotator["folder_path"])
     )
+    delete_labels = (
+        _normalized_delete_labels(payload.delete_labels)
+        if payload.delete_labels is not None
+        else _normalized_delete_labels(annotator.get("delete_labels", []))
+    )
     _ensure_unique_annotator(
         annotators,
         name,
@@ -534,6 +570,7 @@ def update_annotator(
 
     annotator["name"] = name
     annotator["folder_path"] = str(folder_path)
+    annotator["delete_labels"] = delete_labels
     annotator["updated_at"] = datetime.now(timezone.utc).isoformat()
     _write_annotators(annotators)
     return _admin_annotator_payload(annotator)

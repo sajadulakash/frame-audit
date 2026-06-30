@@ -206,14 +206,25 @@ function AdminLoginScreen({ loading, error, onSubmit }) {
   );
 }
 
+function parseDeleteLabels(value) {
+  return value
+    .split(/[\n,]+/)
+    .map((label) => label.trim())
+    .filter(Boolean);
+}
+
+function formatDeleteLabels(labels) {
+  return (labels || []).join("\n");
+}
+
 function AdminScreen({ token, onSessionExpired, onLogout }) {
   const [annotators, setAnnotators] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [createForm, setCreateForm] = useState({ name: "", folderPath: "" });
+  const [createForm, setCreateForm] = useState({ name: "", folderPath: "", deleteLabels: "" });
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ name: "", folderPath: "" });
+  const [editForm, setEditForm] = useState({ name: "", folderPath: "", deleteLabels: "" });
 
   const adminRequest = useCallback(async (url, options = {}) => {
     const response = await fetch(url, {
@@ -255,10 +266,10 @@ function AdminScreen({ token, onSessionExpired, onLogout }) {
     try {
       const annotator = await adminRequest("/api/admin/annotators", {
         method: "POST",
-        body: JSON.stringify({ name: createForm.name, folder_path: createForm.folderPath }),
+        body: JSON.stringify({ name: createForm.name, folder_path: createForm.folderPath, delete_labels: parseDeleteLabels(createForm.deleteLabels) }),
       });
       setAnnotators((current) => [...current, annotator]);
-      setCreateForm({ name: "", folderPath: "" });
+      setCreateForm({ name: "", folderPath: "", deleteLabels: "" });
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -268,7 +279,7 @@ function AdminScreen({ token, onSessionExpired, onLogout }) {
 
   function beginEdit(annotator) {
     setEditingId(annotator.id);
-    setEditForm({ name: annotator.name, folderPath: annotator.folder_path });
+    setEditForm({ name: annotator.name, folderPath: annotator.folder_path, deleteLabels: formatDeleteLabels(annotator.delete_labels) });
     setError("");
   }
 
@@ -278,7 +289,7 @@ function AdminScreen({ token, onSessionExpired, onLogout }) {
     try {
       const updated = await adminRequest("/api/admin/annotators/" + annotatorId, {
         method: "PATCH",
-        body: JSON.stringify({ name: editForm.name, folder_path: editForm.folderPath }),
+        body: JSON.stringify({ name: editForm.name, folder_path: editForm.folderPath, delete_labels: parseDeleteLabels(editForm.deleteLabels) }),
       });
       setAnnotators((current) => current.map((item) => item.id === annotatorId ? updated : item));
       setEditingId(null);
@@ -313,12 +324,13 @@ function AdminScreen({ token, onSessionExpired, onLogout }) {
       <form className="annotator-create-form" onSubmit={createAnnotator}>
         <label><span>Name</span><input value={createForm.name} onChange={(event) => setCreateForm((current) => ({ ...current, name: event.target.value }))} placeholder="Annotator name" required /></label>
         <label className="folder-path-field"><span>Assigned folder path</span><input value={createForm.folderPath} onChange={(event) => setCreateForm((current) => ({ ...current, folderPath: event.target.value }))} placeholder="/absolute/path/to/image-folder" required /></label>
+        <label className="delete-labels-field"><span>Labels to delete</span><textarea value={createForm.deleteLabels} onChange={(event) => setCreateForm((current) => ({ ...current, deleteLabels: event.target.value }))} placeholder="blurred, wrong class, empty box" /></label>
         <button type="submit" className="primary-button" disabled={saving}><Plus size={17} />Add annotator</button>
       </form>
 
       {error && <p className="admin-error" role="alert"><AlertCircle size={16} />{error}</p>}
 
-      <div className="admin-list-header"><span>{annotators.length} annotator{annotators.length === 1 ? "" : "s"}</span><span>Folder assignment</span><span>Images</span><span>Actions</span></div>
+      <div className="admin-list-header"><span>{annotators.length} annotator{annotators.length === 1 ? "" : "s"}</span><span>Assignment</span><span>Images</span><span>Actions</span></div>
       <div className="admin-annotator-list">
         {loading ? (
           <div className="admin-empty-row">Loading annotators...</div>
@@ -331,7 +343,7 @@ function AdminScreen({ token, onSessionExpired, onLogout }) {
               {isEditing ? (
                 <>
                   <input aria-label="Annotator name" value={editForm.name} onChange={(event) => setEditForm((current) => ({ ...current, name: event.target.value }))} />
-                  <input className="inline-path-input" aria-label="Assigned folder path" value={editForm.folderPath} onChange={(event) => setEditForm((current) => ({ ...current, folderPath: event.target.value }))} />
+                  <div className="admin-edit-assignment"><input className="inline-path-input" aria-label="Assigned folder path" value={editForm.folderPath} onChange={(event) => setEditForm((current) => ({ ...current, folderPath: event.target.value }))} /><textarea aria-label="Labels to delete" value={editForm.deleteLabels} onChange={(event) => setEditForm((current) => ({ ...current, deleteLabels: event.target.value }))} /></div>
                   <span className="inline-image-count">{annotator.image_count}</span>
                   <div className="row-actions">
                     <button type="button" aria-label="Save changes" title="Save changes" disabled={saving} onClick={() => saveEdit(annotator.id)}><Save /></button>
@@ -341,7 +353,7 @@ function AdminScreen({ token, onSessionExpired, onLogout }) {
               ) : (
                 <>
                   <div className="admin-person"><span>{annotator.name.charAt(0).toUpperCase()}</span><strong>{annotator.name}</strong></div>
-                  <div className="admin-folder" title={annotator.folder_path}><HardDrive /><span>{annotator.folder_path}</span><i className={annotator.folder_exists ? "is-online" : ""}></i></div>
+                  <div className="admin-assignment"><div className="admin-folder" title={annotator.folder_path}><HardDrive /><span>{annotator.folder_path}</span><i className={annotator.folder_exists ? "is-online" : ""}></i></div>{annotator.delete_labels?.length > 0 && <div className="label-chip-list">{annotator.delete_labels.map((label) => <span key={label}>{label}</span>)}</div>}</div>
                   <strong className="admin-image-count">{annotator.image_count}</strong>
                   <div className="row-actions">
                     <button type="button" aria-label={"Edit " + annotator.name} title="Edit annotator" onClick={() => beginEdit(annotator)}><Pencil /></button>
@@ -501,6 +513,15 @@ function ReviewWorkspace({
             </div>
           </div>
 
+          {review.deleteLabels?.length > 0 && (
+            <div className="delete-label-panel">
+              <span className="inspector-label">Delete labels</span>
+              <div className="review-label-list">
+                {review.deleteLabels.map((label) => <span key={label}>{label}</span>)}
+              </div>
+            </div>
+          )}
+
           <div className="inspector-spacer"></div>
           {message && <p className="review-message">{message}</p>}
 
@@ -540,7 +561,7 @@ function App() {
   const [annotatorsLoading, setAnnotatorsLoading] = useState(false);
   const [reviewMessage, setReviewMessage] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
-  const [review, setReview] = useState({ images: [], currentIndex: 0, totalTrackedImages: 0, canUndo: false });
+  const [review, setReview] = useState({ images: [], currentIndex: 0, totalTrackedImages: 0, canUndo: false, deleteLabels: [] });
   const reviewRef = useRef(review);
 
   useEffect(() => { reviewRef.current = review; }, [review]);
@@ -610,7 +631,7 @@ function App() {
         const foundIndex = images.findIndex((image) => image.name === oldCurrentName);
         currentIndex = foundIndex >= 0 ? foundIndex : Math.min(previous.currentIndex, images.length - 1);
       }
-      return { images, currentIndex, totalTrackedImages: data.total_tracked_images || images.length, canUndo: Boolean(data.can_undo) };
+      return { images, currentIndex, totalTrackedImages: data.total_tracked_images || images.length, canUndo: Boolean(data.can_undo), deleteLabels: data.delete_labels || [] };
     });
     setReviewMessage(data.message || "");
   }, []);
