@@ -2,9 +2,13 @@
 
 ## Overview
 
-FrameAudit is a React and FastAPI tool for reviewing images after CVAT annotation. Administrators dynamically add annotators, rename them, and assign each annotator an image folder from the browser.
+FrameAudit is a React and FastAPI tool for reviewing images after CVAT annotation. Annotators can inspect local image folders, delete incorrect images, undo deletes, and zoom images during review. Administrators dynamically add annotators, rename them, and assign each annotator an image folder from the browser.
 
 Annotator configuration is stored outside the repository at ~/.config/frameaudit/annotators.json by default. Set FRAMEAUDIT_CONFIG_PATH to use another configuration file.
+
+## Demo
+
+![FrameAudit demo](assets/frameaudit-demo.gif)
 
 ## Quick Start
 
@@ -15,15 +19,10 @@ cd frontend
 npm install
 npm run build
 cd ..
+cp .env.example .env
 ~~~
 
-Create .env:
-
-~~~env
-ADMIN_USERNAME=your-admin-username
-ADMIN_PASSWORD=your-admin-password
-# Optional: FRAMEAUDIT_CONFIG_PATH=/path/to/annotators.json
-~~~
+Update .env with your administrator username and password.
 
 Run FrameAudit:
 
@@ -40,8 +39,9 @@ Open http://127.0.0.1:8000. Sign in as administrator to create annotators and as
 - Protected administrator management APIs.
 - React interfaces for administrator and annotator workflows.
 - Browser Back navigation between screens.
-- Previous and next image navigation.
-- Delete incorrect images into deleted/.
+- Previous and next image navigation with arrow keys.
+- Mouse-wheel zoom in the image review workspace.
+- Delete incorrect images into deleted/ with the button or Delete key.
 - Undo the most recent delete.
 - Automatic images.yaml index for each assigned folder.
 
@@ -49,6 +49,8 @@ Open http://127.0.0.1:8000. Sign in as administrator to create annotators and as
 
 ~~~text
 FrameAudit/
+├── assets/
+│   └── frameaudit-demo.gif
 ├── frontend/
 │   ├── src/
 │   │   ├── assets/
@@ -62,6 +64,7 @@ FrameAudit/
 ├── static/
 │   ├── assets/
 │   └── index.html
+├── .env.example
 ├── .gitignore
 ├── README.md
 ├── main.py
