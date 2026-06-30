@@ -2,18 +2,22 @@
 
 ## Overview
 
-FrameAudit is a FastAPI web app for annotators who need to review images after completing annotation work in CVAT. Visitors can continue as an annotator or admin. Annotators select their folder, review images one by one, and remove incorrect images. Admin access requires credentials configured in the local .env file.
+FrameAudit is a React and FastAPI tool for reviewing images after CVAT annotation. Annotators can inspect their assigned folder and move incorrect images into a recoverable deleted folder. Administrators use environment-configured credentials.
 
-The image files stay on the local machine and are not stored in this repository. The app reads the image folders from IMAGE_REVIEW_DATA_DIR. Deleted images are moved into a deleted/ folder instead of being permanently removed.
+Images remain on the local machine and are loaded from IMAGE_REVIEW_DATA_DIR.
 
 ## Quick Start
 
 ~~~bash
 cd ~/Desktop/model-development/FrameAudit
 pip install -r requirements.txt
+cd frontend
+npm install
+npm run build
+cd ..
 ~~~
 
-Create a local .env file:
+Create .env:
 
 ~~~env
 ADMIN_USERNAME=your-admin-username
@@ -21,7 +25,7 @@ ADMIN_PASSWORD=your-admin-password
 IMAGE_REVIEW_DATA_DIR=/path/to/unknown-products
 ~~~
 
-Run the project:
+Run FrameAudit:
 
 ~~~bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -31,25 +35,34 @@ Open http://127.0.0.1:8000.
 
 ## Features
 
-- Role selection for annotator and admin access.
-- Admin login using credentials stored in .env.
+- React interface for annotator and administrator workflows.
+- Browser Back navigation between application screens.
 - Separate review folders for four annotators.
-- One-image-at-a-time review with previous and next navigation.
-- Delete wrong images by moving them into deleted/.
+- Previous and next image navigation.
+- Delete incorrect images into deleted/.
 - Undo the most recent delete.
-- Auto-generated images.yaml index for each image folder.
-- Browser remembers the current image for each folder.
+- Automatic images.yaml index for each folder.
+- Per-folder image position saved in the browser.
 
 ## Project Structure
 
 ~~~text
 FrameAudit/
+├── frontend/
+│   ├── src/
+│   │   ├── assets/
+│   │   ├── App.jsx
+│   │   ├── main.jsx
+│   │   └── styles.css
+│   ├── index.html
+│   ├── package.json
+│   ├── package-lock.json
+│   └── vite.config.js
+├── static/
+│   ├── assets/
+│   └── index.html
 ├── .gitignore
 ├── README.md
 ├── main.py
-├── requirements.txt
-└── static/
-    ├── app.js
-    ├── index.html
-    └── styles.css
+└── requirements.txt
 ~~~
