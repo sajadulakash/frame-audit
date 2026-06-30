@@ -378,6 +378,26 @@ function ReviewWorkspace({
     setZoom(1);
   }, [currentImage?.name]);
 
+  useEffect(() => {
+    function onDeleteKey(event) {
+      const target = event.target;
+      const isTyping = target instanceof HTMLElement && (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      );
+      if (isTyping || !currentImage || event.repeat) return;
+
+      if (event.key === "Delete" || event.code === "Delete" || event.key === "Del") {
+        event.preventDefault();
+        onDelete();
+      }
+    }
+
+    window.addEventListener("keydown", onDeleteKey);
+    return () => window.removeEventListener("keydown", onDeleteKey);
+  }, [currentImage, onDelete]);
+
   function zoomImage(event) {
     if (!currentImage) return;
     event.preventDefault();
@@ -622,6 +642,14 @@ function App() {
       window.localStorage.setItem(LAST_IMAGE_STORAGE_PREFIX + route.userId, currentImage.name);
     }
     function onKeyDown(event) {
+      const target = event.target;
+      const isTyping = target instanceof HTMLElement && (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      );
+      if (isTyping) return;
+
       if (event.key === "ArrowLeft") {
         event.preventDefault();
         setReview((previous) => ({ ...previous, currentIndex: Math.max(0, previous.currentIndex - 1) }));
