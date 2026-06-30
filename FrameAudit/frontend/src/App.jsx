@@ -367,11 +367,26 @@ function ReviewWorkspace({
   onDelete,
   onUndo,
 }) {
+  const [zoom, setZoom] = useState(1);
   const currentImage = review.images[review.currentIndex] || null;
   const currentPosition = currentImage ? currentImage.number : 0;
   const progress = review.totalTrackedImages
     ? Math.min(100, Math.round((currentPosition / review.totalTrackedImages) * 100))
     : 0;
+
+  useEffect(() => {
+    setZoom(1);
+  }, [currentImage?.name]);
+
+  function zoomImage(event) {
+    if (!currentImage) return;
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? -1 : 1;
+    setZoom((currentZoom) => {
+      const nextZoom = currentZoom + direction * 0.12;
+      return Math.min(4, Math.max(0.35, Number(nextZoom.toFixed(2))));
+    });
+  }
 
   return (
     <div className="review-app">
@@ -389,9 +404,11 @@ function ReviewWorkspace({
 
       <main className="review-layout">
         <section className="image-workspace">
-          <div className="image-surface">
+          <div className="image-surface" onWheel={zoomImage}>
             {currentImage ? (
               <img
+                className="review-image"
+                style={{ transform: "scale(" + zoom + ")" }}
                 src={
                   "/api/users/" +
                   route.userId +
