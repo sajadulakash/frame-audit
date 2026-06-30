@@ -2,9 +2,9 @@
 
 ## Overview
 
-FrameAudit is a React and FastAPI tool for reviewing images after CVAT annotation. Annotators can inspect their assigned folder and move incorrect images into a recoverable deleted folder. Administrators use environment-configured credentials.
+FrameAudit is a React and FastAPI tool for reviewing images after CVAT annotation. Administrators dynamically add annotators, rename them, and assign each annotator an image folder from the browser.
 
-Images remain on the local machine and are loaded from IMAGE_REVIEW_DATA_DIR.
+Annotator configuration is stored outside the repository at ~/.config/frameaudit/annotators.json by default. Set FRAMEAUDIT_CONFIG_PATH to use another configuration file.
 
 ## Quick Start
 
@@ -22,7 +22,7 @@ Create .env:
 ~~~env
 ADMIN_USERNAME=your-admin-username
 ADMIN_PASSWORD=your-admin-password
-IMAGE_REVIEW_DATA_DIR=/path/to/unknown-products
+# Optional: FRAMEAUDIT_CONFIG_PATH=/path/to/annotators.json
 ~~~
 
 Run FrameAudit:
@@ -31,18 +31,19 @@ Run FrameAudit:
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ~~~
 
-Open http://127.0.0.1:8000.
+Open http://127.0.0.1:8000. Sign in as administrator to create annotators and assign absolute image-folder paths.
 
 ## Features
 
-- React interface for annotator and administrator workflows.
-- Browser Back navigation between application screens.
-- Separate review folders for four annotators.
+- Dynamic annotator creation, renaming, reassignment, and removal.
+- Persistent annotator configuration outside the Git repository.
+- Protected administrator management APIs.
+- React interfaces for administrator and annotator workflows.
+- Browser Back navigation between screens.
 - Previous and next image navigation.
 - Delete incorrect images into deleted/.
 - Undo the most recent delete.
-- Automatic images.yaml index for each folder.
-- Per-folder image position saved in the browser.
+- Automatic images.yaml index for each assigned folder.
 
 ## Project Structure
 

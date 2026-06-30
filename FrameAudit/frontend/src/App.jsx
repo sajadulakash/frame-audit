@@ -1,23 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
+  AlertCircle,
   ArrowRight,
   Check,
   ChevronLeft,
   ChevronRight,
   FolderOpen,
+  HardDrive,
   ImageOff,
   Images,
   LockKeyhole,
   LogIn,
   LogOut,
+  Pencil,
+  Plus,
   RotateCcw,
+  Save,
   ScanLine,
   ShieldCheck,
   Trash2,
   UserRound,
   UsersRound,
   Wifi,
+  X,
 } from "lucide-react";
 import shelfImage from "./assets/frameaudit-shelf.webp";
 
@@ -29,12 +35,6 @@ const VIEWS = {
   reviewer: "reviewer",
 };
 
-const ANNOTATORS = [
-  { id: "user1", label: "Rouf", folder: "Folder 01", initial: "R" },
-  { id: "user2", label: "Sabina", folder: "Folder 02", initial: "S" },
-  { id: "user3", label: "Sabia", folder: "Folder 03", initial: "S" },
-  { id: "user4", label: "Tanisha", folder: "Folder 04", initial: "T" },
-];
 
 const LAST_IMAGE_STORAGE_PREFIX = "frame-audit:last-image:";
 
@@ -68,7 +68,7 @@ function AccessSidebar({ activeStep }) {
       <Brand />
 
       <nav className="flow-index" aria-label="Access progress">
-        {["Workspace", "Identity", "Review"].map((label, index) => {
+        {["Workspace", "Identity", "Manage"].map((label, index) => {
           const step = index + 1;
           return (
             <div
@@ -97,7 +97,7 @@ function AccessSidebar({ activeStep }) {
   );
 }
 
-function AccessLayout({ activeStep, children }) {
+function AccessLayout({ activeStep, wide = false, children }) {
   return (
     <div className="access-app">
       <AccessSidebar activeStep={activeStep} />
@@ -106,7 +106,7 @@ function AccessLayout({ activeStep, children }) {
           <Brand compact />
           <span><i></i> Local</span>
         </div>
-        <div className="access-content-inner">{children}</div>
+        <div className={"access-content-inner" + (wide ? " is-wide" : "")}>{children}</div>
       </main>
     </div>
   );
@@ -136,29 +136,26 @@ function RolesScreen({ onAnnotator, onAdmin }) {
   );
 }
 
-function AnnotatorsScreen({ error, onSelect }) {
+function AnnotatorsScreen({ annotators, loading, error, onSelect }) {
   return (
     <section className="screen screen-annotators">
       <div className="screen-kicker">02 / Identity</div>
       <h1>Select annotator</h1>
-
-      <div className="annotator-grid">
-        {ANNOTATORS.map((annotator) => (
-          <button
-            type="button"
-            className="annotator-row"
-            key={annotator.id}
-            onClick={() => onSelect(annotator)}
-          >
-            <span className="annotator-avatar">{annotator.initial}</span>
-            <span className="annotator-name">
-              <strong>{annotator.label}</strong>
-              <small>{annotator.folder}</small>
-            </span>
-            <ChevronRight />
-          </button>
-        ))}
-      </div>
+      {loading ? (
+        <div className="annotator-loading">Loading annotators...</div>
+      ) : annotators.length ? (
+        <div className="annotator-grid">
+          {annotators.map((annotator) => (
+            <button type="button" className="annotator-row" key={annotator.id} onClick={() => onSelect(annotator)}>
+              <span className="annotator-avatar">{annotator.label.charAt(0).toUpperCase()}</span>
+              <span className="annotator-name"><strong>{annotator.label}</strong></span>
+              <ChevronRight />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="annotator-empty"><UsersRound /><strong>No annotators assigned</strong></div>
+      )}
       {error && <p className="form-error" role="alert">{error}</p>}
     </section>
   );
@@ -209,16 +206,153 @@ function AdminLoginScreen({ loading, error, onSubmit }) {
   );
 }
 
-function AdminScreen({ message, onLogout }) {
+function AdminScreen({ token, onSessionExpired, onLogout }) {
+  const [annotators, setAnnotators] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [createForm, setCreateForm] = useState({ name: "", folderPath: "" });
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ name: "", folderPath: "" });
+
+  const adminRequest = useCallback(async (url, options = {}) => {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + token,
+        ...(options.headers || {}),
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      onSessionExpired(data.detail || "Admin session expired.");
+      throw new Error(data.detail || "Admin session expired.");
+    }
+    if (!response.ok) throw new Error(data.detail || "Admin request failed.");
+    return data;
+  }, [token, onSessionExpired]);
+
+  const loadAnnotators = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await adminRequest("/api/admin/annotators");
+      setAnnotators(data.annotators || []);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [adminRequest]);
+
+  useEffect(() => { loadAnnotators(); }, [loadAnnotators]);
+
+  async function createAnnotator(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const annotator = await adminRequest("/api/admin/annotators", {
+        method: "POST",
+        body: JSON.stringify({ name: createForm.name, folder_path: createForm.folderPath }),
+      });
+      setAnnotators((current) => [...current, annotator]);
+      setCreateForm({ name: "", folderPath: "" });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function beginEdit(annotator) {
+    setEditingId(annotator.id);
+    setEditForm({ name: annotator.name, folderPath: annotator.folder_path });
+    setError("");
+  }
+
+  async function saveEdit(annotatorId) {
+    setSaving(true);
+    setError("");
+    try {
+      const updated = await adminRequest("/api/admin/annotators/" + annotatorId, {
+        method: "PATCH",
+        body: JSON.stringify({ name: editForm.name, folder_path: editForm.folderPath }),
+      });
+      setAnnotators((current) => current.map((item) => item.id === annotatorId ? updated : item));
+      setEditingId(null);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeAnnotator(annotator) {
+    if (!window.confirm("Remove " + annotator.name + " from FrameAudit?")) return;
+    setSaving(true);
+    setError("");
+    try {
+      await adminRequest("/api/admin/annotators/" + annotator.id, { method: "DELETE" });
+      setAnnotators((current) => current.filter((item) => item.id !== annotator.id));
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <section className="screen screen-admin">
-      <span className="success-icon"><Check /></span>
-      <div className="screen-kicker">Administrator session</div>
-      <h1>{message || "Welcome Admin"}</h1>
-      <button type="button" className="secondary-button" onClick={onLogout}>
-        <LogOut size={16} />
-        Sign out
-      </button>
+    <section className="screen screen-admin-management">
+      <header className="admin-heading">
+        <div><div className="screen-kicker">03 / Manage</div><h1>Annotators</h1></div>
+        <button type="button" className="icon-text-button" onClick={onLogout}><LogOut size={16} />Sign out</button>
+      </header>
+
+      <form className="annotator-create-form" onSubmit={createAnnotator}>
+        <label><span>Name</span><input value={createForm.name} onChange={(event) => setCreateForm((current) => ({ ...current, name: event.target.value }))} placeholder="Annotator name" required /></label>
+        <label className="folder-path-field"><span>Assigned folder path</span><input value={createForm.folderPath} onChange={(event) => setCreateForm((current) => ({ ...current, folderPath: event.target.value }))} placeholder="/absolute/path/to/image-folder" required /></label>
+        <button type="submit" className="primary-button" disabled={saving}><Plus size={17} />Add annotator</button>
+      </form>
+
+      {error && <p className="admin-error" role="alert"><AlertCircle size={16} />{error}</p>}
+
+      <div className="admin-list-header"><span>{annotators.length} annotator{annotators.length === 1 ? "" : "s"}</span><span>Folder assignment</span><span>Images</span><span>Actions</span></div>
+      <div className="admin-annotator-list">
+        {loading ? (
+          <div className="admin-empty-row">Loading annotators...</div>
+        ) : annotators.length === 0 ? (
+          <div className="admin-empty-row"><UsersRound /><strong>No annotators configured</strong></div>
+        ) : annotators.map((annotator) => {
+          const isEditing = editingId === annotator.id;
+          return (
+            <div className="admin-annotator-row" key={annotator.id}>
+              {isEditing ? (
+                <>
+                  <input aria-label="Annotator name" value={editForm.name} onChange={(event) => setEditForm((current) => ({ ...current, name: event.target.value }))} />
+                  <input className="inline-path-input" aria-label="Assigned folder path" value={editForm.folderPath} onChange={(event) => setEditForm((current) => ({ ...current, folderPath: event.target.value }))} />
+                  <span className="inline-image-count">{annotator.image_count}</span>
+                  <div className="row-actions">
+                    <button type="button" aria-label="Save changes" title="Save changes" disabled={saving} onClick={() => saveEdit(annotator.id)}><Save /></button>
+                    <button type="button" aria-label="Cancel editing" title="Cancel editing" onClick={() => setEditingId(null)}><X /></button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="admin-person"><span>{annotator.name.charAt(0).toUpperCase()}</span><strong>{annotator.name}</strong></div>
+                  <div className="admin-folder" title={annotator.folder_path}><HardDrive /><span>{annotator.folder_path}</span><i className={annotator.folder_exists ? "is-online" : ""}></i></div>
+                  <strong className="admin-image-count">{annotator.image_count}</strong>
+                  <div className="row-actions">
+                    <button type="button" aria-label={"Edit " + annotator.name} title="Edit annotator" onClick={() => beginEdit(annotator)}><Pencil /></button>
+                    <button type="button" className="remove-row-button" aria-label={"Remove " + annotator.name} title="Remove annotator" disabled={saving} onClick={() => removeAnnotator(annotator)}><Trash2 /></button>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -361,103 +495,98 @@ function ReviewWorkspace({
 
 function App() {
   const [route, setRoute] = useState({ view: VIEWS.roles });
-  const [adminAuthenticated, setAdminAuthenticated] = useState(false);
-  const [adminMessage, setAdminMessage] = useState("Welcome Admin");
+  const [adminToken, setAdminToken] = useState(() => window.sessionStorage.getItem("frameaudit:admin-token") || "");
   const [adminError, setAdminError] = useState("");
   const [adminLoading, setAdminLoading] = useState(false);
   const [folderError, setFolderError] = useState("");
+  const [annotators, setAnnotators] = useState([]);
+  const [annotatorsLoading, setAnnotatorsLoading] = useState(false);
   const [reviewMessage, setReviewMessage] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
-  const [review, setReview] = useState({
-    images: [],
-    currentIndex: 0,
-    totalTrackedImages: 0,
-    canUndo: false,
-  });
+  const [review, setReview] = useState({ images: [], currentIndex: 0, totalTrackedImages: 0, canUndo: false });
   const reviewRef = useRef(review);
 
-  useEffect(() => {
-    reviewRef.current = review;
-  }, [review]);
+  useEffect(() => { reviewRef.current = review; }, [review]);
 
   const navigate = useCallback((nextRoute, replace = false) => {
     const payload = { frameAudit: true, ...nextRoute };
-    const method = replace ? "replaceState" : "pushState";
-    window.history[method](payload, "", routeUrl(nextRoute));
+    window.history[replace ? "replaceState" : "pushState"](payload, "", routeUrl(nextRoute));
     setRoute(nextRoute);
   }, []);
 
+  const expireAdminSession = useCallback((message) => {
+    window.sessionStorage.removeItem("frameaudit:admin-token");
+    setAdminToken("");
+    setAdminError(message || "Admin session expired.");
+    navigate({ view: VIEWS.adminLogin }, true);
+  }, [navigate]);
+
+  const logoutAdmin = useCallback(async () => {
+    try {
+      if (adminToken) {
+        await fetch("/api/admin/logout", { method: "POST", headers: { Authorization: "Bearer " + adminToken } });
+      }
+    } finally {
+      window.sessionStorage.removeItem("frameaudit:admin-token");
+      setAdminToken("");
+      navigate({ view: VIEWS.roles }, true);
+    }
+  }, [adminToken, navigate]);
+
   useEffect(() => {
     const initial = { view: VIEWS.roles };
-    window.history.replaceState(
-      { frameAudit: true, ...initial },
-      "",
-      routeUrl(initial)
-    );
-
+    window.history.replaceState({ frameAudit: true, ...initial }, "", routeUrl(initial));
     function onPopState(event) {
-      const nextRoute =
-        event.state && event.state.frameAudit
-          ? event.state
-          : { view: VIEWS.roles };
-      setRoute(nextRoute);
+      setRoute(event.state && event.state.frameAudit ? event.state : initial);
     }
-
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   useEffect(() => {
-    if (route.view === VIEWS.admin && !adminAuthenticated) {
-      navigate({ view: VIEWS.adminLogin }, true);
-    }
-  }, [route.view, adminAuthenticated, navigate]);
+    if (route.view === VIEWS.admin && !adminToken) navigate({ view: VIEWS.adminLogin }, true);
+  }, [route.view, adminToken, navigate]);
+
+  useEffect(() => {
+    if (route.view !== VIEWS.annotators) return undefined;
+    const controller = new AbortController();
+    setAnnotatorsLoading(true);
+    setFolderError("");
+    fetch("/api/users", { signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Failed to load annotators.");
+        setAnnotators(data.users || []);
+      })
+      .catch((error) => { if (error.name !== "AbortError") setFolderError(error.message); })
+      .finally(() => { if (!controller.signal.aborted) setAnnotatorsLoading(false); });
+    return () => controller.abort();
+  }, [route.view]);
 
   const applyServerState = useCallback((data, preferredName = null) => {
     setReview((previous) => {
       const storageKey = LAST_IMAGE_STORAGE_PREFIX + data.user_id;
-      const storedName = window.localStorage.getItem(storageKey);
-      const oldCurrentName =
-        preferredName ||
-        storedName ||
-        previous.images[previous.currentIndex]?.name ||
-        null;
+      const oldCurrentName = preferredName || window.localStorage.getItem(storageKey) || previous.images[previous.currentIndex]?.name || null;
       const images = data.images || [];
       let currentIndex = 0;
-
       if (images.length && oldCurrentName) {
         const foundIndex = images.findIndex((image) => image.name === oldCurrentName);
-        currentIndex =
-          foundIndex >= 0
-            ? foundIndex
-            : Math.min(previous.currentIndex, images.length - 1);
+        currentIndex = foundIndex >= 0 ? foundIndex : Math.min(previous.currentIndex, images.length - 1);
       }
-
-      return {
-        images,
-        currentIndex,
-        totalTrackedImages: data.total_tracked_images || images.length,
-        canUndo: Boolean(data.can_undo),
-      };
+      return { images, currentIndex, totalTrackedImages: data.total_tracked_images || images.length, canUndo: Boolean(data.can_undo) };
     });
     setReviewMessage(data.message || "");
   }, []);
 
   useEffect(() => {
     if (route.view !== VIEWS.reviewer || !route.userId) return undefined;
-
     const controller = new AbortController();
     setReviewLoading(true);
     setReviewMessage("");
-
-    fetch("/api/users/" + route.userId + "/state", {
-      signal: controller.signal,
-    })
+    fetch("/api/users/" + route.userId + "/state", { signal: controller.signal })
       .then(async (response) => {
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(data.detail || "Failed to load review folder.");
-        }
+        if (!response.ok) throw new Error(data.detail || "Failed to load review folder.");
         applyServerState(data);
       })
       .catch((error) => {
@@ -465,10 +594,7 @@ function App() {
         setFolderError(error.message);
         navigate({ view: VIEWS.annotators }, true);
       })
-      .finally(() => {
-        if (!controller.signal.aborted) setReviewLoading(false);
-      });
-
+      .finally(() => { if (!controller.signal.aborted) setReviewLoading(false); });
     return () => controller.abort();
   }, [route.view, route.userId, applyServerState, navigate]);
 
@@ -476,32 +602,18 @@ function App() {
     if (route.view !== VIEWS.reviewer) return undefined;
     const currentImage = review.images[review.currentIndex];
     if (currentImage && route.userId) {
-      window.localStorage.setItem(
-        LAST_IMAGE_STORAGE_PREFIX + route.userId,
-        currentImage.name
-      );
+      window.localStorage.setItem(LAST_IMAGE_STORAGE_PREFIX + route.userId, currentImage.name);
     }
-
     function onKeyDown(event) {
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        setReview((previous) => ({
-          ...previous,
-          currentIndex: Math.max(0, previous.currentIndex - 1),
-        }));
+        setReview((previous) => ({ ...previous, currentIndex: Math.max(0, previous.currentIndex - 1) }));
       }
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        setReview((previous) => ({
-          ...previous,
-          currentIndex: Math.min(
-            Math.max(0, previous.images.length - 1),
-            previous.currentIndex + 1
-          ),
-        }));
+        setReview((previous) => ({ ...previous, currentIndex: Math.min(Math.max(0, previous.images.length - 1), previous.currentIndex + 1) }));
       }
     }
-
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [route.view, route.userId, review.images, review.currentIndex]);
@@ -510,17 +622,11 @@ function App() {
     setAdminLoading(true);
     setAdminError("");
     try {
-      const response = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credentials),
-      });
+      const response = await fetch("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(credentials) });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.detail || "Login failed.");
-      }
-      setAdminAuthenticated(true);
-      setAdminMessage(data.message || "Welcome Admin");
+      if (!response.ok) throw new Error(data.detail || "Login failed.");
+      window.sessionStorage.setItem("frameaudit:admin-token", data.token);
+      setAdminToken(data.token);
       navigate({ view: VIEWS.admin });
     } catch (error) {
       setAdminError(error.message);
@@ -533,117 +639,50 @@ function App() {
     const current = reviewRef.current;
     const image = current.images[current.currentIndex];
     if (!image) return;
-
     setReviewMessage("");
     try {
-      const response = await fetch(
-        "/api/users/" +
-          route.userId +
-          "/delete/" +
-          encodeURIComponent(image.name),
-        { method: "POST" }
-      );
+      const response = await fetch("/api/users/" + route.userId + "/delete/" + encodeURIComponent(image.name), { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Delete failed.");
       applyServerState(data);
-    } catch (error) {
-      setReviewMessage(error.message);
-    }
+    } catch (error) { setReviewMessage(error.message); }
   }
 
   async function undoDelete() {
     setReviewMessage("");
     try {
-      const response = await fetch("/api/users/" + route.userId + "/undo", {
-        method: "POST",
-      });
+      const response = await fetch("/api/users/" + route.userId + "/undo", { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Undo failed.");
       applyServerState(data, data.restored_name || null);
-    } catch (error) {
-      setReviewMessage(error.message);
-    }
+    } catch (error) { setReviewMessage(error.message); }
   }
 
-  const activeStep = useMemo(() => {
-    if (route.view === VIEWS.roles) return 1;
-    if (route.view === VIEWS.admin) return 3;
-    return 2;
-  }, [route.view]);
+  const activeStep = useMemo(() => route.view === VIEWS.roles ? 1 : route.view === VIEWS.admin ? 3 : 2, [route.view]);
 
   if (route.view === VIEWS.reviewer) {
     return (
-      <ReviewWorkspace
-        route={route}
-        review={review}
-        loading={reviewLoading}
-        message={reviewMessage}
-        onPrevious={() =>
-          setReview((previous) => ({
-            ...previous,
-            currentIndex: Math.max(0, previous.currentIndex - 1),
-          }))
-        }
-        onNext={() =>
-          setReview((previous) => ({
-            ...previous,
-            currentIndex: Math.min(
-              previous.images.length - 1,
-              previous.currentIndex + 1
-            ),
-          }))
-        }
-        onDelete={deleteImage}
-        onUndo={undoDelete}
+      <ReviewWorkspace route={route} review={review} loading={reviewLoading} message={reviewMessage}
+        onPrevious={() => setReview((previous) => ({ ...previous, currentIndex: Math.max(0, previous.currentIndex - 1) }))}
+        onNext={() => setReview((previous) => ({ ...previous, currentIndex: Math.min(previous.images.length - 1, previous.currentIndex + 1) }))}
+        onDelete={deleteImage} onUndo={undoDelete}
       />
     );
   }
 
   return (
-    <AccessLayout activeStep={activeStep}>
+    <AccessLayout activeStep={activeStep} wide={route.view === VIEWS.admin}>
       {route.view === VIEWS.roles && (
-        <RolesScreen
-          onAnnotator={() => {
-            setFolderError("");
-            navigate({ view: VIEWS.annotators });
-          }}
-          onAdmin={() => {
-            setAdminError("");
-            navigate({ view: VIEWS.adminLogin });
-          }}
-        />
+        <RolesScreen onAnnotator={() => { setFolderError(""); navigate({ view: VIEWS.annotators }); }} onAdmin={() => { setAdminError(""); navigate({ view: VIEWS.adminLogin }); }} />
       )}
-
       {route.view === VIEWS.annotators && (
-        <AnnotatorsScreen
-          error={folderError}
-          onSelect={(annotator) => {
-            setFolderError("");
-            navigate({
-              view: VIEWS.reviewer,
-              userId: annotator.id,
-              userLabel: annotator.label,
-            });
-          }}
-        />
+        <AnnotatorsScreen annotators={annotators} loading={annotatorsLoading} error={folderError} onSelect={(annotator) => { setFolderError(""); navigate({ view: VIEWS.reviewer, userId: annotator.id, userLabel: annotator.label }); }} />
       )}
-
       {route.view === VIEWS.adminLogin && (
-        <AdminLoginScreen
-          loading={adminLoading}
-          error={adminError}
-          onSubmit={loginAdmin}
-        />
+        <AdminLoginScreen loading={adminLoading} error={adminError} onSubmit={loginAdmin} />
       )}
-
       {route.view === VIEWS.admin && (
-        <AdminScreen
-          message={adminMessage}
-          onLogout={() => {
-            setAdminAuthenticated(false);
-            navigate({ view: VIEWS.roles }, true);
-          }}
-        />
+        <AdminScreen token={adminToken} onSessionExpired={expireAdminSession} onLogout={logoutAdmin} />
       )}
     </AccessLayout>
   );
