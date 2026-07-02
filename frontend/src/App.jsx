@@ -133,7 +133,7 @@ function AnnotatorsScreen({ annotators, loading, error, onSelect }) {
   return (
     <section className="screen screen-annotators">
       <div className="screen-kicker">02 / Identity</div>
-      <h1>Select annotator</h1>
+      <h1>Select Your Name</h1>
       {loading ? (
         <div className="annotator-loading">Loading annotators...</div>
       ) : annotators.length ? (
