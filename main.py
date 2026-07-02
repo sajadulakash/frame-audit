@@ -54,84 +54,32 @@ class AdminLoginRequest(BaseModel):
 
 class AnnotatorCreateRequest(BaseModel):
     name: str
+
+
+class AnnotatorUpdateRequest(BaseModel):
+    name: str | None = None
+
+
+class TaskCreateRequest(BaseModel):
+    name: str
     folder_path: str
     delete_labels: list[str] = Field(default_factory=list)
 
 
-class AnnotatorUpdateRequest(BaseModel):
+class TaskUpdateRequest(BaseModel):
     name: str | None = None
     folder_path: str | None = None
     delete_labels: list[str] | None = None
 
 
-def _read_annotators() -> list[dict[str, Any]]:
-    with _CONFIG_LOCK:
-        if not ANNOTATOR_CONFIG_PATH.exists():
-            return []
-
-        try:
-            payload = json.loads(ANNOTATOR_CONFIG_PATH.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Could not read annotator configuration: {error}",
-            ) from error
-
-        annotators = payload.get("annotators") if isinstance(payload, dict) else None
-        if not isinstance(annotators, list):
-            raise HTTPException(
-                status_code=500,
-                detail="Annotator configuration has an invalid format.",
-            )
-
-        valid_annotators: list[dict[str, Any]] = []
-        for annotator in annotators:
-            if not isinstance(annotator, dict):
-                continue
-            if not all(
-                isinstance(annotator.get(key), str)
-                for key in ("id", "name", "folder_path")
-            ):
-                continue
-            annotator["delete_labels"] = _normalized_delete_labels(annotator.get("delete_labels", []))
-            valid_annotators.append(annotator)
-
-        return valid_annotators
-
-
-def _write_annotators(annotators: list[dict[str, Any]]) -> None:
-    payload = {
-        "version": 1,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "annotators": annotators,
-    }
-
-    with _CONFIG_LOCK:
-        try:
-            ANNOTATOR_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-            temporary_path = ANNOTATOR_CONFIG_PATH.with_suffix(
-                ANNOTATOR_CONFIG_PATH.suffix + ".tmp"
-            )
-            temporary_path.write_text(
-                json.dumps(payload, indent=2, ensure_ascii=True) + "\n",
-                encoding="utf-8",
-            )
-            temporary_path.replace(ANNOTATOR_CONFIG_PATH)
-        except OSError as error:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Could not save annotator configuration: {error}",
-            ) from error
-
-
-def _normalized_name(value: str) -> str:
+def _normalized_name(value: str, label: str = "Name") -> str:
     name = " ".join(value.split())
     if not name:
-        raise HTTPException(status_code=422, detail="Annotator name is required.")
+        raise HTTPException(status_code=422, detail=f"{label} is required.")
     if len(name) > 80:
         raise HTTPException(
             status_code=422,
-            detail="Annotator name must be 80 characters or fewer.",
+            detail=f"{label} must be 80 characters or fewer.",
         )
     return name
 
@@ -186,13 +134,120 @@ def _normalized_delete_labels(labels: list[str] | None) -> list[str]:
     return normalized_labels
 
 
-def _ensure_unique_annotator(
+def _legacy_task_id(annotator_id: str) -> str:
+    clean_id = "".join(character for character in annotator_id if character.isalnum())
+    return "task_" + (clean_id[-12:] or uuid4().hex[:12])
+
+
+def _normalized_task(raw_task: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(raw_task, dict):
+        return None
+    if not all(isinstance(raw_task.get(key), str) for key in ("id", "name", "folder_path")):
+        return None
+    return {
+        "id": raw_task["id"],
+        "name": _normalized_name(raw_task["name"], "Task name"),
+        "folder_path": raw_task["folder_path"],
+        "delete_labels": _normalized_delete_labels(raw_task.get("delete_labels", [])),
+        "created_at": raw_task.get("created_at"),
+        "updated_at": raw_task.get("updated_at"),
+    }
+
+
+def _normalized_annotator(raw_annotator: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(raw_annotator, dict):
+        return None
+    if not all(isinstance(raw_annotator.get(key), str) for key in ("id", "name")):
+        return None
+
+    tasks: list[dict[str, Any]] = []
+    raw_tasks = raw_annotator.get("tasks")
+    if isinstance(raw_tasks, list):
+        for raw_task in raw_tasks:
+            task = _normalized_task(raw_task)
+            if task is not None:
+                tasks.append(task)
+    elif isinstance(raw_annotator.get("folder_path"), str):
+        timestamp = raw_annotator.get("created_at")
+        tasks.append(
+            {
+                "id": _legacy_task_id(raw_annotator["id"]),
+                "name": "Default task",
+                "folder_path": raw_annotator["folder_path"],
+                "delete_labels": _normalized_delete_labels(raw_annotator.get("delete_labels", [])),
+                "created_at": timestamp,
+                "updated_at": raw_annotator.get("updated_at", timestamp),
+            }
+        )
+
+    return {
+        "id": raw_annotator["id"],
+        "name": _normalized_name(raw_annotator["name"], "Annotator name"),
+        "tasks": tasks,
+        "created_at": raw_annotator.get("created_at"),
+        "updated_at": raw_annotator.get("updated_at"),
+    }
+
+
+def _read_annotators() -> list[dict[str, Any]]:
+    with _CONFIG_LOCK:
+        if not ANNOTATOR_CONFIG_PATH.exists():
+            return []
+
+        try:
+            payload = json.loads(ANNOTATOR_CONFIG_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not read annotator configuration: {error}",
+            ) from error
+
+        annotators = payload.get("annotators") if isinstance(payload, dict) else None
+        if not isinstance(annotators, list):
+            raise HTTPException(
+                status_code=500,
+                detail="Annotator configuration has an invalid format.",
+            )
+
+        valid_annotators: list[dict[str, Any]] = []
+        for raw_annotator in annotators:
+            annotator = _normalized_annotator(raw_annotator)
+            if annotator is not None:
+                valid_annotators.append(annotator)
+
+        return valid_annotators
+
+
+def _write_annotators(annotators: list[dict[str, Any]]) -> None:
+    payload = {
+        "version": 2,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "annotators": annotators,
+    }
+
+    with _CONFIG_LOCK:
+        try:
+            ANNOTATOR_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            temporary_path = ANNOTATOR_CONFIG_PATH.with_suffix(
+                ANNOTATOR_CONFIG_PATH.suffix + ".tmp"
+            )
+            temporary_path.write_text(
+                json.dumps(payload, indent=2, ensure_ascii=True) + "\n",
+                encoding="utf-8",
+            )
+            temporary_path.replace(ANNOTATOR_CONFIG_PATH)
+        except OSError as error:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not save annotator configuration: {error}",
+            ) from error
+
+
+def _ensure_unique_annotator_name(
     annotators: list[dict[str, Any]],
     name: str,
-    folder_path: Path,
     excluded_id: str | None = None,
 ) -> None:
-    resolved_folder = str(folder_path)
     for annotator in annotators:
         if annotator["id"] == excluded_id:
             continue
@@ -201,11 +256,30 @@ def _ensure_unique_annotator(
                 status_code=409,
                 detail="An annotator with this name already exists.",
             )
-        if annotator["folder_path"] == resolved_folder:
-            raise HTTPException(
-                status_code=409,
-                detail="This folder is already assigned to another annotator.",
-            )
+
+
+def _ensure_unique_task(
+    annotators: list[dict[str, Any]],
+    annotator_id: str,
+    task_name: str,
+    folder_path: Path,
+    excluded_task_id: str | None = None,
+) -> None:
+    resolved_folder = str(folder_path)
+    for annotator in annotators:
+        for task in annotator.get("tasks", []):
+            if task["id"] == excluded_task_id:
+                continue
+            if annotator["id"] == annotator_id and task["name"].casefold() == task_name.casefold():
+                raise HTTPException(
+                    status_code=409,
+                    detail="This annotator already has a task with this name.",
+                )
+            if task["folder_path"] == resolved_folder:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This folder is already assigned to another task.",
+                )
 
 
 def _annotator_config(annotator_id: str) -> dict[str, Any]:
@@ -215,8 +289,16 @@ def _annotator_config(annotator_id: str) -> dict[str, Any]:
     raise HTTPException(status_code=404, detail="Annotator is not configured.")
 
 
-def _admin_annotator_payload(annotator: dict[str, Any]) -> dict[str, Any]:
-    folder_path = Path(annotator["folder_path"])
+def _task_config(annotator_id: str, task_id: str) -> dict[str, Any]:
+    annotator = _annotator_config(annotator_id)
+    for task in annotator.get("tasks", []):
+        if task["id"] == task_id:
+            return task
+    raise HTTPException(status_code=404, detail="Task is not configured.")
+
+
+def _task_image_count(task: dict[str, Any]) -> tuple[bool, int]:
+    folder_path = Path(task["folder_path"])
     folder_exists = folder_path.exists() and folder_path.is_dir()
     image_count = 0
     if folder_exists:
@@ -225,25 +307,42 @@ def _admin_annotator_payload(annotator: dict[str, Any]) -> dict[str, Any]:
             for path in folder_path.iterdir()
             if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
         )
+    return folder_exists, image_count
 
+
+def _admin_task_payload(task: dict[str, Any]) -> dict[str, Any]:
+    folder_exists, image_count = _task_image_count(task)
+    return {
+        "id": task["id"],
+        "name": task["name"],
+        "folder_path": task["folder_path"],
+        "folder_exists": folder_exists,
+        "image_count": image_count,
+        "delete_labels": _normalized_delete_labels(task.get("delete_labels", [])),
+        "created_at": task.get("created_at"),
+        "updated_at": task.get("updated_at"),
+    }
+
+
+def _admin_annotator_payload(annotator: dict[str, Any]) -> dict[str, Any]:
+    task_payloads = [_admin_task_payload(task) for task in annotator.get("tasks", [])]
     return {
         "id": annotator["id"],
         "name": annotator["name"],
-        "folder_path": annotator["folder_path"],
-        "folder_exists": folder_exists,
-        "image_count": image_count,
-        "delete_labels": _normalized_delete_labels(annotator.get("delete_labels", [])),
+        "task_count": len(task_payloads),
+        "image_count": sum(task["image_count"] for task in task_payloads),
+        "tasks": task_payloads,
         "created_at": annotator.get("created_at"),
         "updated_at": annotator.get("updated_at"),
     }
 
 
-def _image_directory(annotator_id: str) -> Path:
-    return Path(_annotator_config(annotator_id)["folder_path"])
+def _image_directory(annotator_id: str, task_id: str) -> Path:
+    return Path(_task_config(annotator_id, task_id)["folder_path"])
 
 
-def _validate_image_directory(annotator_id: str) -> None:
-    image_directory = _image_directory(annotator_id)
+def _validate_image_directory(annotator_id: str, task_id: str) -> None:
+    image_directory = _image_directory(annotator_id, task_id)
     if not image_directory.exists():
         raise HTTPException(
             status_code=404,
@@ -256,21 +355,21 @@ def _validate_image_directory(annotator_id: str) -> None:
         )
 
 
-def _deleted_directory(annotator_id: str) -> Path:
-    return _image_directory(annotator_id) / DELETED_DIRECTORY_NAME
+def _deleted_directory(annotator_id: str, task_id: str) -> Path:
+    return _image_directory(annotator_id, task_id) / DELETED_DIRECTORY_NAME
 
 
-def _yaml_file_path(annotator_id: str) -> Path:
-    return _image_directory(annotator_id) / YAML_FILE_NAME
+def _yaml_file_path(annotator_id: str, task_id: str) -> Path:
+    return _image_directory(annotator_id, task_id) / YAML_FILE_NAME
 
 
-def _undo_log_path(annotator_id: str) -> Path:
-    return _image_directory(annotator_id) / UNDO_LOG_FILE_NAME
+def _undo_log_path(annotator_id: str, task_id: str) -> Path:
+    return _image_directory(annotator_id, task_id) / UNDO_LOG_FILE_NAME
 
 
-def _list_images(annotator_id: str) -> list[Path]:
-    _validate_image_directory(annotator_id)
-    image_directory = _image_directory(annotator_id)
+def _list_images(annotator_id: str, task_id: str) -> list[Path]:
+    _validate_image_directory(annotator_id, task_id)
+    image_directory = _image_directory(annotator_id, task_id)
     return sorted(
         [
             path
@@ -281,8 +380,8 @@ def _list_images(annotator_id: str) -> list[Path]:
     )
 
 
-def _read_yaml_index(annotator_id: str) -> dict[str, Any]:
-    yaml_path = _yaml_file_path(annotator_id)
+def _read_yaml_index(annotator_id: str, task_id: str) -> dict[str, Any]:
+    yaml_path = _yaml_file_path(annotator_id, task_id)
     if not yaml_path.exists():
         return {}
 
@@ -292,10 +391,10 @@ def _read_yaml_index(annotator_id: str) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _sync_yaml_index(annotator_id: str) -> dict[str, Any]:
-    current_images = _list_images(annotator_id)
+def _sync_yaml_index(annotator_id: str, task_id: str) -> dict[str, Any]:
+    current_images = _list_images(annotator_id, task_id)
     current_names = {image_path.name for image_path in current_images}
-    existing_payload = _read_yaml_index(annotator_id)
+    existing_payload = _read_yaml_index(annotator_id, task_id)
     existing_entries = existing_payload.get("images", [])
 
     tracked_entries: list[dict[str, Any]] = []
@@ -341,29 +440,29 @@ def _sync_yaml_index(annotator_id: str) -> dict[str, Any]:
     tracked_entries.sort(key=lambda entry: entry["number"])
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "image_directory": str(_image_directory(annotator_id)),
+        "image_directory": str(_image_directory(annotator_id, task_id)),
         "total_images": len(current_images),
         "total_tracked_images": len(tracked_entries),
         "images": tracked_entries,
     }
 
-    with _yaml_file_path(annotator_id).open("w", encoding="utf-8") as yaml_file:
+    with _yaml_file_path(annotator_id, task_id).open("w", encoding="utf-8") as yaml_file:
         yaml.safe_dump(payload, yaml_file, sort_keys=False, allow_unicode=False)
 
     return payload
 
 
-def _ensure_system_files(annotator_id: str) -> None:
-    _validate_image_directory(annotator_id)
-    _deleted_directory(annotator_id).mkdir(exist_ok=True)
-    if not _undo_log_path(annotator_id).exists():
-        with _undo_log_path(annotator_id).open("w", encoding="utf-8") as log_file:
+def _ensure_system_files(annotator_id: str, task_id: str) -> None:
+    _validate_image_directory(annotator_id, task_id)
+    _deleted_directory(annotator_id, task_id).mkdir(exist_ok=True)
+    if not _undo_log_path(annotator_id, task_id).exists():
+        with _undo_log_path(annotator_id, task_id).open("w", encoding="utf-8") as log_file:
             yaml.safe_dump({"history": []}, log_file, sort_keys=False)
-    _sync_yaml_index(annotator_id)
+    _sync_yaml_index(annotator_id, task_id)
 
 
-def _read_undo_history(annotator_id: str) -> list[dict[str, Any]]:
-    log_path = _undo_log_path(annotator_id)
+def _read_undo_history(annotator_id: str, task_id: str) -> list[dict[str, Any]]:
+    log_path = _undo_log_path(annotator_id, task_id)
     if not log_path.exists():
         return []
     with log_path.open("r", encoding="utf-8") as log_file:
@@ -374,36 +473,40 @@ def _read_undo_history(annotator_id: str) -> list[dict[str, Any]]:
 
 def _write_undo_history(
     annotator_id: str,
+    task_id: str,
     history: list[dict[str, Any]],
 ) -> None:
-    with _undo_log_path(annotator_id).open("w", encoding="utf-8") as log_file:
+    with _undo_log_path(annotator_id, task_id).open("w", encoding="utf-8") as log_file:
         yaml.safe_dump({"history": history}, log_file, sort_keys=False, allow_unicode=False)
 
 
-def _current_state(annotator_id: str) -> dict[str, Any]:
-    _ensure_system_files(annotator_id)
-    index_payload = _sync_yaml_index(annotator_id)
+def _current_state(annotator_id: str, task_id: str) -> dict[str, Any]:
+    _ensure_system_files(annotator_id, task_id)
+    index_payload = _sync_yaml_index(annotator_id, task_id)
     image_entries = [
         {"number": entry["number"], "name": entry["name"]}
         for entry in index_payload["images"]
         if entry["present"]
     ]
-    history = _read_undo_history(annotator_id)
+    history = _read_undo_history(annotator_id, task_id)
     annotator = _annotator_config(annotator_id)
+    task = _task_config(annotator_id, task_id)
     return {
         "user_id": annotator_id,
         "user_label": annotator["name"],
+        "task_id": task_id,
+        "task_label": task["name"],
         "images": image_entries,
         "total_images": len(image_entries),
         "total_tracked_images": index_payload["total_tracked_images"],
         "can_undo": bool(history),
         "last_deleted_name": history[-1]["original_name"] if history else None,
-        "delete_labels": _normalized_delete_labels(annotator.get("delete_labels", [])),
+        "delete_labels": _normalized_delete_labels(task.get("delete_labels", [])),
     }
 
 
-def _safe_deleted_name(annotator_id: str, original_name: str) -> str:
-    target = _deleted_directory(annotator_id) / original_name
+def _safe_deleted_name(annotator_id: str, task_id: str, original_name: str) -> str:
+    target = _deleted_directory(annotator_id, task_id) / original_name
     if not target.exists():
         return original_name
 
@@ -461,9 +564,35 @@ def serve_index() -> FileResponse:
 def get_users() -> dict[str, Any]:
     return {
         "users": [
-            {"id": annotator["id"], "label": annotator["name"]}
+            {
+                "id": annotator["id"],
+                "label": annotator["name"],
+                "task_count": len(annotator.get("tasks", [])),
+            }
             for annotator in _read_annotators()
         ]
+    }
+
+
+@app.get("/api/users/{annotator_id}/tasks")
+def get_user_tasks(annotator_id: str) -> dict[str, Any]:
+    annotator = _annotator_config(annotator_id)
+    tasks = []
+    for task in annotator.get("tasks", []):
+        folder_exists, image_count = _task_image_count(task)
+        tasks.append(
+            {
+                "id": task["id"],
+                "label": task["name"],
+                "folder_exists": folder_exists,
+                "image_count": image_count,
+                "delete_labels": _normalized_delete_labels(task.get("delete_labels", [])),
+            }
+        )
+    return {
+        "user_id": annotator["id"],
+        "user_label": annotator["name"],
+        "tasks": tasks,
     }
 
 
@@ -510,17 +639,14 @@ def create_annotator(
     _: str = Depends(_require_admin),
 ) -> dict[str, Any]:
     annotators = _read_annotators()
-    name = _normalized_name(payload.name)
-    folder_path = _normalized_folder_path(payload.folder_path)
-    delete_labels = _normalized_delete_labels(payload.delete_labels)
-    _ensure_unique_annotator(annotators, name, folder_path)
+    name = _normalized_name(payload.name, "Annotator name")
+    _ensure_unique_annotator_name(annotators, name)
 
     timestamp = datetime.now(timezone.utc).isoformat()
     annotator = {
         "id": "ann_" + uuid4().hex[:12],
         "name": name,
-        "folder_path": str(folder_path),
-        "delete_labels": delete_labels,
+        "tasks": [],
         "created_at": timestamp,
         "updated_at": timestamp,
     }
@@ -535,42 +661,18 @@ def update_annotator(
     payload: AnnotatorUpdateRequest,
     _: str = Depends(_require_admin),
 ) -> dict[str, Any]:
-    if payload.name is None and payload.folder_path is None and payload.delete_labels is None:
+    if payload.name is None:
         raise HTTPException(status_code=422, detail="No changes were provided.")
 
     annotators = _read_annotators()
-    annotator = next(
-        (item for item in annotators if item["id"] == annotator_id),
-        None,
-    )
+    annotator = next((item for item in annotators if item["id"] == annotator_id), None)
     if annotator is None:
         raise HTTPException(status_code=404, detail="Annotator is not configured.")
 
-    name = (
-        _normalized_name(payload.name)
-        if payload.name is not None
-        else annotator["name"]
-    )
-    folder_path = (
-        _normalized_folder_path(payload.folder_path)
-        if payload.folder_path is not None
-        else Path(annotator["folder_path"])
-    )
-    delete_labels = (
-        _normalized_delete_labels(payload.delete_labels)
-        if payload.delete_labels is not None
-        else _normalized_delete_labels(annotator.get("delete_labels", []))
-    )
-    _ensure_unique_annotator(
-        annotators,
-        name,
-        folder_path,
-        excluded_id=annotator_id,
-    )
+    name = _normalized_name(payload.name, "Annotator name")
+    _ensure_unique_annotator_name(annotators, name, excluded_id=annotator_id)
 
     annotator["name"] = name
-    annotator["folder_path"] = str(folder_path)
-    annotator["delete_labels"] = delete_labels
     annotator["updated_at"] = datetime.now(timezone.utc).isoformat()
     _write_annotators(annotators)
     return _admin_annotator_payload(annotator)
@@ -594,15 +696,115 @@ def delete_annotator(
     return {"message": "Annotator removed."}
 
 
-@app.get("/api/users/{annotator_id}/state")
-def get_state(annotator_id: str) -> dict[str, Any]:
-    return _current_state(annotator_id)
+@app.post("/api/admin/annotators/{annotator_id}/tasks", status_code=201)
+def create_task(
+    annotator_id: str,
+    payload: TaskCreateRequest,
+    _: str = Depends(_require_admin),
+) -> dict[str, Any]:
+    annotators = _read_annotators()
+    annotator = next((item for item in annotators if item["id"] == annotator_id), None)
+    if annotator is None:
+        raise HTTPException(status_code=404, detail="Annotator is not configured.")
+
+    name = _normalized_name(payload.name, "Task name")
+    folder_path = _normalized_folder_path(payload.folder_path)
+    delete_labels = _normalized_delete_labels(payload.delete_labels)
+    _ensure_unique_task(annotators, annotator_id, name, folder_path)
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    task = {
+        "id": "task_" + uuid4().hex[:12],
+        "name": name,
+        "folder_path": str(folder_path),
+        "delete_labels": delete_labels,
+        "created_at": timestamp,
+        "updated_at": timestamp,
+    }
+    annotator.setdefault("tasks", []).append(task)
+    annotator["updated_at"] = timestamp
+    _write_annotators(annotators)
+    return _admin_task_payload(task)
 
 
-@app.get("/api/users/{annotator_id}/images/{image_name:path}")
-def get_image(annotator_id: str, image_name: str) -> FileResponse:
+@app.patch("/api/admin/annotators/{annotator_id}/tasks/{task_id}")
+def update_task(
+    annotator_id: str,
+    task_id: str,
+    payload: TaskUpdateRequest,
+    _: str = Depends(_require_admin),
+) -> dict[str, Any]:
+    if payload.name is None and payload.folder_path is None and payload.delete_labels is None:
+        raise HTTPException(status_code=422, detail="No changes were provided.")
+
+    annotators = _read_annotators()
+    annotator = next((item for item in annotators if item["id"] == annotator_id), None)
+    if annotator is None:
+        raise HTTPException(status_code=404, detail="Annotator is not configured.")
+    task = next((item for item in annotator.get("tasks", []) if item["id"] == task_id), None)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task is not configured.")
+
+    name = _normalized_name(payload.name, "Task name") if payload.name is not None else task["name"]
+    folder_path = (
+        _normalized_folder_path(payload.folder_path)
+        if payload.folder_path is not None
+        else Path(task["folder_path"])
+    )
+    delete_labels = (
+        _normalized_delete_labels(payload.delete_labels)
+        if payload.delete_labels is not None
+        else _normalized_delete_labels(task.get("delete_labels", []))
+    )
+    _ensure_unique_task(
+        annotators,
+        annotator_id,
+        name,
+        folder_path,
+        excluded_task_id=task_id,
+    )
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    task["name"] = name
+    task["folder_path"] = str(folder_path)
+    task["delete_labels"] = delete_labels
+    task["updated_at"] = timestamp
+    annotator["updated_at"] = timestamp
+    _write_annotators(annotators)
+    return _admin_task_payload(task)
+
+
+@app.delete("/api/admin/annotators/{annotator_id}/tasks/{task_id}")
+def delete_task(
+    annotator_id: str,
+    task_id: str,
+    _: str = Depends(_require_admin),
+) -> dict[str, str]:
+    annotators = _read_annotators()
+    annotator = next((item for item in annotators if item["id"] == annotator_id), None)
+    if annotator is None:
+        raise HTTPException(status_code=404, detail="Annotator is not configured.")
+
+    tasks = annotator.get("tasks", [])
+    remaining_tasks = [task for task in tasks if task["id"] != task_id]
+    if len(remaining_tasks) == len(tasks):
+        raise HTTPException(status_code=404, detail="Task is not configured.")
+
+    annotator["tasks"] = remaining_tasks
+    annotator["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _write_annotators(annotators)
+    return {"message": "Task removed."}
+
+
+@app.get("/api/users/{annotator_id}/tasks/{task_id}/state")
+def get_state(annotator_id: str, task_id: str) -> dict[str, Any]:
+    return _current_state(annotator_id, task_id)
+
+
+@app.get("/api/users/{annotator_id}/tasks/{task_id}/images/{image_name:path}")
+def get_image(annotator_id: str, task_id: str, image_name: str) -> FileResponse:
     decoded_name = Path(unquote(image_name)).name
-    image_path = _image_directory(annotator_id) / decoded_name
+    image_path = _image_directory(annotator_id, task_id) / decoded_name
 
     if not image_path.exists() or not image_path.is_file():
         raise HTTPException(status_code=404, detail="Image not found.")
@@ -612,22 +814,22 @@ def get_image(annotator_id: str, image_name: str) -> FileResponse:
     return FileResponse(image_path)
 
 
-@app.post("/api/users/{annotator_id}/delete/{image_name:path}")
-def delete_image(annotator_id: str, image_name: str) -> dict[str, Any]:
-    _ensure_system_files(annotator_id)
+@app.post("/api/users/{annotator_id}/tasks/{task_id}/delete/{image_name:path}")
+def delete_image(annotator_id: str, task_id: str, image_name: str) -> dict[str, Any]:
+    _ensure_system_files(annotator_id, task_id)
     decoded_name = Path(unquote(image_name)).name
-    source_path = _image_directory(annotator_id) / decoded_name
+    source_path = _image_directory(annotator_id, task_id) / decoded_name
 
     if not source_path.exists() or not source_path.is_file():
         raise HTTPException(status_code=404, detail="Image not found.")
     if source_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Unsupported image type.")
 
-    deleted_name = _safe_deleted_name(annotator_id, source_path.name)
-    deleted_path = _deleted_directory(annotator_id) / deleted_name
+    deleted_name = _safe_deleted_name(annotator_id, task_id, source_path.name)
+    deleted_path = _deleted_directory(annotator_id, task_id) / deleted_name
     move(str(source_path), str(deleted_path))
 
-    history = _read_undo_history(annotator_id)
+    history = _read_undo_history(annotator_id, task_id)
     history.append(
         {
             "original_name": source_path.name,
@@ -635,23 +837,23 @@ def delete_image(annotator_id: str, image_name: str) -> dict[str, Any]:
             "deleted_at": datetime.now(timezone.utc).isoformat(),
         }
     )
-    _write_undo_history(annotator_id, history)
+    _write_undo_history(annotator_id, task_id, history)
 
-    state = _current_state(annotator_id)
+    state = _current_state(annotator_id, task_id)
     state["message"] = f"Moved {source_path.name} to {deleted_path.name}."
     return state
 
 
-@app.post("/api/users/{annotator_id}/undo")
-def undo_delete(annotator_id: str) -> dict[str, Any]:
-    _ensure_system_files(annotator_id)
-    history = _read_undo_history(annotator_id)
+@app.post("/api/users/{annotator_id}/tasks/{task_id}/undo")
+def undo_delete(annotator_id: str, task_id: str) -> dict[str, Any]:
+    _ensure_system_files(annotator_id, task_id)
+    history = _read_undo_history(annotator_id, task_id)
     if not history:
         raise HTTPException(status_code=400, detail="Nothing to undo.")
 
     last_entry = history.pop()
-    deleted_path = _deleted_directory(annotator_id) / last_entry["deleted_name"]
-    restored_path = _image_directory(annotator_id) / last_entry["original_name"]
+    deleted_path = _deleted_directory(annotator_id, task_id) / last_entry["deleted_name"]
+    restored_path = _image_directory(annotator_id, task_id) / last_entry["original_name"]
 
     if not deleted_path.exists():
         raise HTTPException(status_code=404, detail="Deleted image file is missing.")
@@ -662,9 +864,9 @@ def undo_delete(annotator_id: str) -> dict[str, Any]:
         )
 
     move(str(deleted_path), str(restored_path))
-    _write_undo_history(annotator_id, history)
+    _write_undo_history(annotator_id, task_id, history)
 
-    state = _current_state(annotator_id)
+    state = _current_state(annotator_id, task_id)
     state["message"] = f"Restored {restored_path.name}."
     state["restored_name"] = restored_path.name
     return state
