@@ -463,7 +463,7 @@ function AdminScreen({ token, onSessionExpired, onLogout }) {
               <form className="task-create-form" onSubmit={(event) => createTask(event, annotator.id)}>
                 <label><span>Task name</span><input value={form.name} onChange={(event) => updateTaskForm(annotator.id, { name: event.target.value })} placeholder="Task name" required /></label>
                 <label><span>Assigned folder path</span><input value={form.folderPath} onChange={(event) => updateTaskForm(annotator.id, { folderPath: event.target.value })} placeholder="/absolute/path/to/image-folder" required /></label>
-                <label><span>Labels to delete</span><textarea value={form.deleteLabels} onChange={(event) => updateTaskForm(annotator.id, { deleteLabels: event.target.value })} placeholder="blurred, wrong class, empty box" /></label>
+                <label><span>Instructions</span><textarea value={form.deleteLabels} onChange={(event) => updateTaskForm(annotator.id, { deleteLabels: event.target.value })} placeholder="Write task instructions for annotators" /></label>
                 <button type="submit" className="primary-button" disabled={saving}><Plus size={17} />Add task</button>
               </form>
 
@@ -478,7 +478,7 @@ function AdminScreen({ token, onSessionExpired, onLogout }) {
                         <>
                           <input aria-label="Task name" value={editTaskForm.name} onChange={(event) => setEditTaskForm((current) => ({ ...current, name: event.target.value }))} />
                           <input aria-label="Assigned folder path" value={editTaskForm.folderPath} onChange={(event) => setEditTaskForm((current) => ({ ...current, folderPath: event.target.value }))} />
-                          <textarea aria-label="Labels to delete" value={editTaskForm.deleteLabels} onChange={(event) => setEditTaskForm((current) => ({ ...current, deleteLabels: event.target.value }))} />
+                          <textarea aria-label="Instructions" value={editTaskForm.deleteLabels} onChange={(event) => setEditTaskForm((current) => ({ ...current, deleteLabels: event.target.value }))} />
                           <span className="inline-image-count">{task.image_count}</span>
                           <div className="row-actions">
                             <button type="button" aria-label="Save task" title="Save task" disabled={saving} onClick={saveTaskEdit}><Save /></button>
@@ -579,7 +579,7 @@ function ReviewWorkspace({ route, review, loading, message, onPrevious, onNext, 
             <div><Images size={16} /><span>Available</span><strong>{review.images.length}</strong></div>
             <div><FolderOpen size={16} /><span>Tracked</span><strong>{review.totalTrackedImages}</strong></div>
           </div>
-          {review.deleteLabels?.length > 0 && <div className="delete-label-panel"><span className="inspector-label">Delete labels</span><div className="review-label-list">{review.deleteLabels.map((label) => <span key={label}>{label}</span>)}</div></div>}
+          {review.deleteLabels?.length > 0 && <div className="delete-label-panel"><span className="inspector-label">Instructions</span><div className="review-label-list">{review.deleteLabels.map((label) => <span key={label}>{label}</span>)}</div></div>}
           <div className="inspector-spacer"></div>
           {message && <p className="review-message">{message}</p>}
           <div className="review-actions">
