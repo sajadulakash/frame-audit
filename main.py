@@ -34,7 +34,8 @@ ANNOTATOR_CONFIG_PATH = Path(
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
 DELETED_DIRECTORY_NAME = "deleted"
-YAML_FILE_NAME = "images.yaml"
+INDEX_FILE_NAME = "images.json"
+LEGACY_INDEX_FILE_NAME = "images.yaml"
 UNDO_LOG_FILE_NAME = ".undo_log.yaml"
 ADMIN_SESSION_LIFETIME = timedelta(hours=8)
 
@@ -359,8 +360,12 @@ def _deleted_directory(annotator_id: str, task_id: str) -> Path:
     return _image_directory(annotator_id, task_id) / DELETED_DIRECTORY_NAME
 
 
-def _yaml_file_path(annotator_id: str, task_id: str) -> Path:
-    return _image_directory(annotator_id, task_id) / YAML_FILE_NAME
+def _index_file_path(annotator_id: str, task_id: str) -> Path:
+    return _image_directory(annotator_id, task_id) / INDEX_FILE_NAME
+
+
+def _legacy_index_path(annotator_id: str, task_id: str) -> Path:
+    return _image_directory(annotator_id, task_id) / LEGACY_INDEX_FILE_NAME
 
 
 def _undo_log_path(annotator_id: str, task_id: str) -> Path:
@@ -380,21 +385,29 @@ def _list_images(annotator_id: str, task_id: str) -> list[Path]:
     )
 
 
-def _read_yaml_index(annotator_id: str, task_id: str) -> dict[str, Any]:
-    yaml_path = _yaml_file_path(annotator_id, task_id)
-    if not yaml_path.exists():
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(json.dumps(payload), encoding="utf-8")
+    temporary_path.replace(path)
+
+
+def _read_index(annotator_id: str, task_id: str) -> dict[str, Any]:
+    index_path = _index_file_path(annotator_id, task_id)
+    if not index_path.exists():
         return {}
 
-    with yaml_path.open("r", encoding="utf-8") as yaml_file:
-        data = yaml.safe_load(yaml_file) or {}
+    try:
+        data = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
 
     return data if isinstance(data, dict) else {}
 
 
-def _sync_yaml_index(annotator_id: str, task_id: str) -> dict[str, Any]:
+def _sync_index(annotator_id: str, task_id: str) -> dict[str, Any]:
     current_images = _list_images(annotator_id, task_id)
     current_names = {image_path.name for image_path in current_images}
-    existing_payload = _read_yaml_index(annotator_id, task_id)
+    existing_payload = _read_index(annotator_id, task_id)
     existing_entries = existing_payload.get("images", [])
 
     tracked_entries: list[dict[str, Any]] = []
@@ -446,19 +459,24 @@ def _sync_yaml_index(annotator_id: str, task_id: str) -> dict[str, Any]:
         "images": tracked_entries,
     }
 
-    with _yaml_file_path(annotator_id, task_id).open("w", encoding="utf-8") as yaml_file:
-        yaml.safe_dump(payload, yaml_file, sort_keys=False, allow_unicode=False)
+    _write_json_atomic(_index_file_path(annotator_id, task_id), payload)
+
+    legacy_path = _legacy_index_path(annotator_id, task_id)
+    if legacy_path.exists():
+        try:
+            legacy_path.unlink()
+        except OSError:
+            pass
 
     return payload
 
 
-def _ensure_system_files(annotator_id: str, task_id: str) -> None:
+def _ensure_task_dirs(annotator_id: str, task_id: str) -> None:
     _validate_image_directory(annotator_id, task_id)
     _deleted_directory(annotator_id, task_id).mkdir(exist_ok=True)
     if not _undo_log_path(annotator_id, task_id).exists():
         with _undo_log_path(annotator_id, task_id).open("w", encoding="utf-8") as log_file:
             yaml.safe_dump({"history": []}, log_file, sort_keys=False)
-    _sync_yaml_index(annotator_id, task_id)
 
 
 def _read_undo_history(annotator_id: str, task_id: str) -> list[dict[str, Any]]:
@@ -481,8 +499,8 @@ def _write_undo_history(
 
 
 def _current_state(annotator_id: str, task_id: str) -> dict[str, Any]:
-    _ensure_system_files(annotator_id, task_id)
-    index_payload = _sync_yaml_index(annotator_id, task_id)
+    _ensure_task_dirs(annotator_id, task_id)
+    index_payload = _sync_index(annotator_id, task_id)
     image_entries = [
         {"number": entry["number"], "name": entry["name"]}
         for entry in index_payload["images"]
@@ -816,7 +834,7 @@ def get_image(annotator_id: str, task_id: str, image_name: str) -> FileResponse:
 
 @app.post("/api/users/{annotator_id}/tasks/{task_id}/delete/{image_name:path}")
 def delete_image(annotator_id: str, task_id: str, image_name: str) -> dict[str, Any]:
-    _ensure_system_files(annotator_id, task_id)
+    _ensure_task_dirs(annotator_id, task_id)
     decoded_name = Path(unquote(image_name)).name
     source_path = _image_directory(annotator_id, task_id) / decoded_name
 
@@ -846,7 +864,7 @@ def delete_image(annotator_id: str, task_id: str, image_name: str) -> dict[str, 
 
 @app.post("/api/users/{annotator_id}/tasks/{task_id}/undo")
 def undo_delete(annotator_id: str, task_id: str) -> dict[str, Any]:
-    _ensure_system_files(annotator_id, task_id)
+    _ensure_task_dirs(annotator_id, task_id)
     history = _read_undo_history(annotator_id, task_id)
     if not history:
         raise HTTPException(status_code=400, detail="Nothing to undo.")
