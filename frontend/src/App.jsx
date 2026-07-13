@@ -48,6 +48,21 @@ function routeUrl(route) {
   return "#access";
 }
 
+function parseHashRoute(hash) {
+  const value = (hash || "").replace(/^#/, "");
+  if (value === "annotators") return { view: VIEWS.annotators };
+  if (value.startsWith("tasks-")) return { view: VIEWS.tasks, userId: decodeURIComponent(value.slice(6)), userLabel: "" };
+  if (value === "admin-login") return { view: VIEWS.adminLogin };
+  if (value === "admin") return { view: VIEWS.admin };
+  if (value.startsWith("review-")) {
+    const parts = value.slice(7).split("-");
+    if (parts.length >= 2) {
+      return { view: VIEWS.reviewer, userId: decodeURIComponent(parts[0]), taskId: decodeURIComponent(parts.slice(1).join("-")), userLabel: "", taskLabel: "" };
+    }
+  }
+  return { view: VIEWS.roles };
+}
+
 function Brand({ compact = false }) {
   return (
     <div className={"brand" + (compact ? " brand-compact" : "")}>
@@ -473,7 +488,7 @@ function AdminScreen({ token, onSessionExpired, onLogout }) {
                 ) : annotator.tasks.map((task) => {
                   const isEditingTask = editingTask?.annotatorId === annotator.id && editingTask?.taskId === task.id;
                   return (
-                    <div className="task-row" key={task.id}>
+                    <div className={"task-row" + (isEditingTask ? " is-editing" : "")} key={task.id}>
                       {isEditingTask ? (
                         <>
                           <input aria-label="Task name" value={editTaskForm.name} onChange={(event) => setEditTaskForm((current) => ({ ...current, name: event.target.value }))} />
@@ -567,7 +582,7 @@ function ReviewWorkspace({ route, review, loading, message, onPrevious, onNext, 
         </section>
         <aside className="review-inspector">
           <div className="inspector-user">
-            <span>{route.userLabel.charAt(0).toUpperCase()}</span>
+            <span>{(route.userLabel || "").charAt(0).toUpperCase()}</span>
             <div><small>{route.taskLabel}</small><strong>{route.userLabel}</strong></div>
           </div>
           <div className="inspector-section">
@@ -593,7 +608,7 @@ function ReviewWorkspace({ route, review, loading, message, onPrevious, onNext, 
 }
 
 function App() {
-  const [route, setRoute] = useState({ view: VIEWS.roles });
+  const [route, setRoute] = useState(() => parseHashRoute(window.location.hash));
   const [adminToken, setAdminToken] = useState(() => window.sessionStorage.getItem("frameaudit:admin-token") || "");
   const [adminError, setAdminError] = useState("");
   const [adminLoading, setAdminLoading] = useState(false);
@@ -633,9 +648,9 @@ function App() {
   }, [adminToken, navigate]);
 
   useEffect(() => {
-    const initial = { view: VIEWS.roles };
+    const initial = parseHashRoute(window.location.hash);
     window.history.replaceState({ frameAudit: true, ...initial }, "", routeUrl(initial));
-    function onPopState(event) { setRoute(event.state && event.state.frameAudit ? event.state : initial); }
+    function onPopState(event) { setRoute(event.state && event.state.frameAudit ? event.state : { view: VIEWS.roles }); }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -701,6 +716,14 @@ function App() {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || "Failed to load review folder.");
         applyServerState(data);
+        if (data.user_label || data.task_label) {
+          setRoute((previous) =>
+            previous.view === VIEWS.reviewer && previous.userId === data.user_id && previous.taskId === data.task_id
+              && (previous.userLabel !== data.user_label || previous.taskLabel !== data.task_label)
+              ? { ...previous, userLabel: data.user_label, taskLabel: data.task_label }
+              : previous
+          );
+        }
       })
       .catch((error) => {
         if (error.name === "AbortError") return;

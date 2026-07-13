@@ -1233,6 +1233,10 @@ button:disabled {
   border-bottom: 0;
 }
 
+.task-row.is-editing {
+  grid-template-columns: minmax(140px, 0.8fr) minmax(200px, 1.1fr) minmax(220px, 1.5fr) 56px 86px;
+}
+
 .task-name-cell {
   min-width: 0;
   display: flex;
@@ -1279,7 +1283,8 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
-  .task-row {
+  .task-row,
+  .task-row.is-editing {
     grid-template-columns: minmax(160px, 1fr) 64px 78px;
   }
 
@@ -1301,7 +1306,8 @@ button:disabled {
     padding: 12px;
   }
 
-  .task-row {
+  .task-row,
+  .task-row.is-editing {
     padding: 12px;
     grid-template-columns: minmax(0, 1fr) 76px;
   }
