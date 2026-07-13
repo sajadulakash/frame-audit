@@ -528,6 +528,28 @@ function ReviewWorkspace({ route, review, loading, message, onPrevious, onNext, 
   const currentImage = review.images[review.currentIndex] || null;
   const currentPosition = currentImage ? currentImage.number : 0;
   const progress = review.totalTrackedImages ? Math.min(100, Math.round((currentPosition / review.totalTrackedImages) * 100)) : 0;
+  const instructions = review.deleteLabels || [];
+  const instructionsKey = "frame-audit:instructions:" + route.userId + ":" + route.taskId;
+  const [checkedInstructions, setCheckedInstructions] = useState(() => new Set());
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(instructionsKey) || "[]");
+      setCheckedInstructions(new Set(Array.isArray(stored) ? stored : []));
+    } catch {
+      setCheckedInstructions(new Set());
+    }
+  }, [instructionsKey]);
+
+  function toggleInstruction(label) {
+    setCheckedInstructions((previous) => {
+      const next = new Set(previous);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      window.localStorage.setItem(instructionsKey, JSON.stringify([...next]));
+      return next;
+    });
+  }
 
   useEffect(() => { setZoom(1); }, [currentImage?.name]);
 
@@ -594,8 +616,21 @@ function ReviewWorkspace({ route, review, loading, message, onPrevious, onNext, 
             <div><Images size={16} /><span>Available</span><strong>{review.images.length}</strong></div>
             <div><FolderOpen size={16} /><span>Tracked</span><strong>{review.totalTrackedImages}</strong></div>
           </div>
-          {review.deleteLabels?.length > 0 && <div className="delete-label-panel"><span className="inspector-label">Instructions</span><div className="review-label-list">{review.deleteLabels.map((label) => <span key={label}>{label}</span>)}</div></div>}
-          <div className="inspector-spacer"></div>
+          {instructions.length > 0 ? (
+            <div className="delete-label-panel">
+              <span className="inspector-label">Instructions</span>
+              <div className="instruction-checklist">
+                {instructions.map((label, index) => (
+                  <label className="instruction-item" key={label + index}>
+                    <input type="checkbox" checked={checkedInstructions.has(label)} onChange={() => toggleInstruction(label)} />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="inspector-spacer"></div>
+          )}
           {message && <p className="review-message">{message}</p>}
           <div className="review-actions">
             <button type="button" className="undo-button" disabled={!review.canUndo} onClick={onUndo}><RotateCcw size={17} />Undo</button>
